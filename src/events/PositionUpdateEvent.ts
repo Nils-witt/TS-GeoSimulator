@@ -1,11 +1,11 @@
-import {LatLonPosition} from "../Types";
+import {LatLonPosition} from '../Types';
 
 export class PositionUpdateEvent extends Event {
 
     private position: LatLonPosition | null;
 
     constructor(position: LatLonPosition | null = null) {
-        super("positionUpdate");
+        super('positionUpdate');
         this.position = position;
     }
 

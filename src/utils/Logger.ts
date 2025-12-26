@@ -1,4 +1,4 @@
-import winston, {createLogger, format} from "winston";
+import winston, {createLogger, format} from 'winston';
 
 
 export const ApplicationLogger = createLogger({
@@ -27,14 +27,13 @@ const getFormattedDate = () => {
     const hours = String(now.getHours()).padStart(2, '0');
     const minutes = String(now.getMinutes()).padStart(2, '0');
     const seconds = String(now.getSeconds()).padStart(2, '0');
-    const milliseconds = String(now.getMilliseconds()).padStart(3, '0');
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-}
+};
 
 const myFormat = format.printf((info) => {
     const service = info.service as string || 'General';
-    return `${getFormattedDate()} [${info.level.padEnd(6, ' ')}] [${service.padEnd(20, ' ')}] ${info.message}`;
-})
+    return `${getFormattedDate()} [${info.level.padEnd(6, ' ')}] [${service.padEnd(20, ' ')}] ${info.message as string}`;
+});
 
 
 //

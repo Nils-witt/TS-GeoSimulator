@@ -1,16 +1,17 @@
-import {EventListener, LatLonPosition} from "../Types";
-import {PositionUpdateEvent} from "../events/PositionUpdateEvent";
+import {EventListener, LatLonPosition} from '../Types';
+import {PositionUpdateEvent} from '../events/PositionUpdateEvent';
 
 
 export abstract class AbstractSimulator {
 
-    private listeners: Map<string, EventListener[]> = new Map();
+    private listeners = new Map<string, EventListener[]>();
     private position: LatLonPosition | null = null;
     private positionsHistory: Map<number, LatLonPosition | null> = new Map<number, LatLonPosition | null>();
 
     constructor() {
-
+        /* empty */
     }
+
 
     on(eventName: string, listener: EventListener): void {
         if (!this.listeners.has(eventName)) {
@@ -51,4 +52,6 @@ export abstract class AbstractSimulator {
     abstract start(): void;
 
     abstract stop(): void;
+
+    abstract setup(): Promise<void>
 }

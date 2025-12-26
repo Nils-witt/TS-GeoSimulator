@@ -1,15 +1,15 @@
-import {AbstractSimulator} from "./AbstractSimulator";
-import {LatLonPosition} from "../Types";
-import {ApplicationLogger} from "../utils/Logger";
+import {AbstractSimulator} from './AbstractSimulator';
+import {LatLonPosition} from '../Types';
+import {ApplicationLogger} from '../utils/Logger';
 
-export type RouteSimulatorOptions = {
+export interface RouteSimulatorOptions {
     serverUrl?: string; // e.g. https://router.project-osrm.org/route/v1
     profile?: string; // e.g. driving, walking, cycling
     speedMps?: number; // meters per second
     updateIntervalMs?: number;
     maxRetries?: number;
     fetchTimeoutMs?: number;
-};
+}
 
 export class RouteSimulator extends AbstractSimulator {
     private startPos: LatLonPosition;
@@ -25,8 +25,8 @@ export class RouteSimulator extends AbstractSimulator {
         this.startPos = start;
         this.endPos = end;
         this.options = {
-            serverUrl: options.serverUrl ?? "https://router.project-osrm.org/route/v1",
-            profile: options.profile ?? "driving",
+            serverUrl: options.serverUrl ?? 'https://router.project-osrm.org/route/v1',
+            profile: options.profile ?? 'driving',
             speedMps: options.speedMps ?? 10,
             updateIntervalMs: options.updateIntervalMs ?? 1000,
             maxRetries: options.maxRetries ?? 3,
@@ -34,8 +34,7 @@ export class RouteSimulator extends AbstractSimulator {
         };
     }
 
-    async start(): Promise<void> {
-        // short-circuit identical points
+    async setup(): Promise<void> {
         if (this.startPos.latitude === this.endPos.latitude && this.startPos.longitude === this.endPos.longitude) {
             this.setPosition(this.startPos);
             return;
@@ -46,7 +45,14 @@ export class RouteSimulator extends AbstractSimulator {
 
         if (!this.route || this.route.length === 0) {
             // emit error event via base class
-            this.emit(new Event("error"));
+            this.emit(new Event('error'));
+            return;
+        }
+    }
+
+    start(): void {
+        if (this.startPos.latitude === this.endPos.latitude && this.startPos.longitude === this.endPos.longitude) {
+            this.setPosition(this.startPos);
             return;
         }
 
@@ -62,7 +68,7 @@ export class RouteSimulator extends AbstractSimulator {
 
     stop(): void {
         if (this.timer) {
-            clearInterval(this.timer as any);
+            clearInterval(this.timer);
             this.timer = null;
         }
     }
@@ -71,7 +77,6 @@ export class RouteSimulator extends AbstractSimulator {
         const url = `${this.options.serverUrl}/${this.options.profile}/${this.startPos.longitude},${this.startPos.latitude};${this.endPos.longitude},${this.endPos.latitude}?overview=full&geometries=geojson`;
 
         let attempt = 0;
-        let lastErr: any = null;
         while (attempt <= this.options.maxRetries) {
             attempt++;
             try {
@@ -82,10 +87,10 @@ export class RouteSimulator extends AbstractSimulator {
                 clearTimeout(timeout);
 
                 if (!resp.ok) {
-                    lastErr = new Error(`Routing server returned ${resp.status}`);
+                    ApplicationLogger.warn(`Failed to fetch route (status: ${resp.status}). Attempt ${attempt} of ${this.options.maxRetries}.`, {service: this.constructor.name});
                     // handle 429 with potential Retry-After header
                     if (resp.status === 429) {
-                        const ra = resp.headers.get("Retry-After");
+                        const ra = resp.headers.get('Retry-After');
                         const wait = ra ? parseInt(ra) * 1000 : 500 * attempt;
                         await new Promise((r) => setTimeout(r, wait));
                         continue;
@@ -95,30 +100,30 @@ export class RouteSimulator extends AbstractSimulator {
                     continue;
                 }
 
-                const json = await resp.json();
+                const json = await resp.json() as { routes: { geometry: { coordinates: number[][] } }[] };
                 if (!json || !json.routes || json.routes.length === 0) {
-                    lastErr = new Error("No route returned");
+                    ApplicationLogger.error('No routes found in response.', {service: this.constructor.name});
                     break;
                 }
 
                 const coords: number[][] = json.routes[0].geometry.coordinates;
                 this.route = coords.map((c: number[]) => ({latitude: c[1], longitude: c[0]}));
                 return;
-            } catch (e: any) {
-                lastErr = e;
+            } catch {
+                ApplicationLogger.error('Failed to fetch route:', {service: this.constructor.name});
+
                 // on abort or network error, backoff then retry
                 await new Promise((r) => setTimeout(r, 200 * attempt));
                 continue;
             }
         }
 
-        ApplicationLogger.error("Failed to fetch route:", {service: this.constructor.name, err: lastErr});
         this.route = [];
     }
 
     private tick(): void {
         if (!this.route || this.currentIndex >= this.route.length - 1) {
-            ApplicationLogger.info("Route completed stopping simulator.", {service: this.constructor.name});
+            ApplicationLogger.info('Route completed stopping simulator.', {service: this.constructor.name});
             this.stop();
             return;
         }

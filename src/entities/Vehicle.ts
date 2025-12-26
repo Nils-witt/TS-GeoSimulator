@@ -1,8 +1,8 @@
 import {UUID} from 'crypto';
 import {AbstractEntity} from './AbstractEntity';
-import {RouteSimulator} from "../simulator/RouteSimulator";
-import {PositionUpdateEvent} from "../events/PositionUpdateEvent";
-import {ApplicationLogger} from "../utils/Logger";
+import {RouteSimulator} from '../simulator/RouteSimulator';
+import {PositionUpdateEvent} from '../events/PositionUpdateEvent';
+import {ApplicationLogger} from '../utils/Logger';
 
 export class Vehicle extends AbstractEntity {
 
@@ -11,7 +11,7 @@ export class Vehicle extends AbstractEntity {
     }
 
     getInfo(): string {
-        return `Vehicle ID: ${this.id}, Created At: ${this}, Updated At: ${this.updatedAt}`;
+        return `Vehicle ID: ${this.id}, Created At: ${this.createdAt.toISOString()}, Updated At: ${this.updatedAt.toISOString()}`;
     }
 
     start(): void {
@@ -22,7 +22,7 @@ export class Vehicle extends AbstractEntity {
             {speedMps: 15, updateIntervalMs: 2000} // 15 m/s ~ 54 km/h
         );
 
-        simulator.on("positionUpdate", (event) => {
+        simulator.on('positionUpdate', (event) => {
             this.setPosition((event as PositionUpdateEvent).getPosition());
         });
         simulator.start();

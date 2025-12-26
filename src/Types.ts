@@ -1,12 +1,12 @@
 export type EventListener = (event: Event) => void;
 
-export type LatLonPosition = {
+export interface LatLonPosition {
     latitude: number;
     longitude: number;
-};
+}
 
 
-export type ConfigType = {
+export interface ConfigType {
     vehicles: {
         id: string;
         speed: number;
@@ -17,6 +17,6 @@ export type ConfigType = {
     connectors: {
         id: string;
         connector: string;
-        data: { [key: string]: any; }
+        data: Record<string, string | number | boolean>;
     }[]
 }

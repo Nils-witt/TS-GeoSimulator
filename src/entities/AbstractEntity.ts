@@ -1,6 +1,6 @@
-import {UUID} from "crypto";
-import {EventListener, LatLonPosition} from "../Types";
-import {PositionUpdateEvent} from "../events/PositionUpdateEvent";
+import {UUID} from 'crypto';
+import {EventListener, LatLonPosition} from '../Types';
+import {PositionUpdateEvent} from '../events/PositionUpdateEvent';
 
 export function offsetPosition(
     latLon: LatLonPosition,
@@ -36,7 +36,7 @@ export abstract class AbstractEntity {
     protected updatedAt: Date;
     protected position: LatLonPosition | null = {latitude: 50.7373889, longitude: 7.0981944};
 
-    private listeners: Map<string, EventListener[]> = new Map();
+    private listeners = new Map<string, EventListener[]>();
 
     constructor(id: UUID) {
         this.id = id;
