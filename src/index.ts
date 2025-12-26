@@ -48,7 +48,7 @@ class GeoSimulator {
 
         this.config.vehicles.forEach((vehicle) => {
             ApplicationLogger.info(`Setting up simulation for vehicle ID: ${vehicle.id}`, {service: this.constructor.name});
-            const simVehicle = new Vehicle(vehicle.id as UUID);
+            const simVehicle = new Vehicle(vehicle.id as UUID, vehicle.movementType);
             this.vehicles.set(vehicle.id, simVehicle);
             // Attach connectors to vehicle
             vehicle.connectors.forEach(connId => {

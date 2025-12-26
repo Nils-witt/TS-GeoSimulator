@@ -10,6 +10,7 @@ export interface ConfigType {
     vehicles: {
         id: string;
         speed: number;
+        movementType: string;
         start: LatLonPosition;
         end: LatLonPosition;
         connectors: string[]

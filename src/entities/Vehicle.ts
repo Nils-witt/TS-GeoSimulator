@@ -6,8 +6,11 @@ import {ApplicationLogger} from '../utils/Logger';
 
 export class Vehicle extends AbstractEntity {
 
-    constructor(id: UUID) {
+    private movementType: string;
+
+    constructor(id: UUID, movementType = 'driving') {
         super(id);
+        this.movementType = movementType;
     }
 
     getInfo(): string {
@@ -19,7 +22,7 @@ export class Vehicle extends AbstractEntity {
 
         const simulator = new RouteSimulator({latitude: 50.7373889, longitude: 7.0981944},
             {latitude: 50.748444, longitude: 7.090717},
-            {speedMps: 15, updateIntervalMs: 2000} // 15 m/s ~ 54 km/h
+            {speedMps: 15, updateIntervalMs: 2000, profile: this.movementType} // 15 m/s ~ 54 km/h
         );
 
         simulator.on('positionUpdate', (event) => {
