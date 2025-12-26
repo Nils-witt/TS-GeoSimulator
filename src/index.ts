@@ -1,16 +1,17 @@
+require('dotenv').config()
+
 import {WebSocketConnector} from "./connectors/WebSocketConnector";
 import {Vehicle} from "./entities/Vehicle";
-import {randomUUID} from "crypto";
+import {randomUUID, UUID} from "crypto";
 import {EventListener} from "./Types";
 import {setInterval} from 'node:timers';
 import {ApplicationLogger} from "./utils/Logger";
 
-const token = "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzY3NTUwNTA5LCJpYXQiOjE3NjY1MTM3MDksImp0aSI6ImZhZDI3Mjg2Yzk0NjQ0ODM4MDQwMTgwMDZjN2UzZjliIiwidXNlcl9pZCI6IjIiLCJvdmVybGF5cyI6WyIyMDI0X3B1ZW1hIl0sImlzX3N1cGVydXNlciI6dHJ1ZSwidmlld19hbGwiOnRydWV9.Q8AMc8gqzIBUUm7OmxzunbOulmcFhVWOF5m7MVhg6096M1I4WHNBJlBhb8GxywmSSbBUMX6W30sbnoGqDha0fg"
 class GeoSimulator {
 
     // Format: Map<EventName, Array<ListenerFunction>>
     private listeners: Map<string, EventListener[]> = new Map();
-    private apiConnector: WebSocketConnector = new WebSocketConnector("wss://map.home.nils-witt.de/api/ws/", token,true);
+    private apiConnector: WebSocketConnector = new WebSocketConnector(process.env.WS_ENDPOINT || '', process.env.WS_ACCESS_KEY || '', true);
 
     constructor() {
         // Initialization code here
@@ -19,9 +20,7 @@ class GeoSimulator {
     start() {
         ApplicationLogger.info("Starting GeoSimulator", {service: this.constructor.name});
         this.apiConnector.connect();
-
-        // Start simulation logic here
-        const vehicle = new Vehicle(randomUUID());
+        const vehicle = new Vehicle(process.env.WS_OBJECT_ID as UUID || randomUUID());
         this.apiConnector.attachEntity(vehicle);
 
         vehicle.start();

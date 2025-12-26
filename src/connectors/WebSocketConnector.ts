@@ -88,7 +88,7 @@ export class WebSocketConnector {
                 const message = {
                     command: 'model.update',
                     model: 'NamedGeoReferencedItem',
-                    id: '1f5ee2d2-8cd0-4e76-8924-9365abe00398',
+                    id: entity.getId(),
                     data: {
                         latitude: position ? position.latitude : null,
                         longitude: position ? position.longitude : null
