@@ -49,5 +49,6 @@ export abstract class AbstractSimulator {
     }
 
     abstract start(): void;
+
     abstract stop(): void;
 }

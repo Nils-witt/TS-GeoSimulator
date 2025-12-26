@@ -78,7 +78,7 @@ export class RouteSimulator extends AbstractSimulator {
                 const controller = new AbortController();
                 const timeout = setTimeout(() => controller.abort(), this.options.fetchTimeoutMs);
 
-                const resp = await fetch(url, { signal: controller.signal });
+                const resp = await fetch(url, {signal: controller.signal});
                 clearTimeout(timeout);
 
                 if (!resp.ok) {
@@ -102,7 +102,7 @@ export class RouteSimulator extends AbstractSimulator {
                 }
 
                 const coords: number[][] = json.routes[0].geometry.coordinates;
-                this.route = coords.map((c: number[]) => ({ latitude: c[1], longitude: c[0] }));
+                this.route = coords.map((c: number[]) => ({latitude: c[1], longitude: c[0]}));
                 return;
             } catch (e: any) {
                 lastErr = e;
@@ -200,6 +200,6 @@ function offsetPosition(latDeg: number, lonDeg: number, distanceMeters: number, 
     let lon2 = lon1 + Math.atan2(y, x);
     lon2 = ((lon2 + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
 
-    return { latitude: toDeg(lat2), longitude: toDeg(lon2) };
+    return {latitude: toDeg(lat2), longitude: toDeg(lon2)};
 }
 

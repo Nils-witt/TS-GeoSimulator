@@ -2,6 +2,7 @@ import {AbstractEntity} from "../entities/AbstractEntity";
 import {UUID} from "crypto";
 import {PositionUpdateEvent} from "../events/PositionUpdateEvent";
 import {ApplicationLogger} from "../utils/Logger";
+import {AbstractConnector} from "./AbstractConnector";
 
 interface WebSocketMessage {
     command: string;
@@ -9,7 +10,7 @@ interface WebSocketMessage {
 }
 
 
-export class WebSocketConnector {
+export class WebSocketConnector extends AbstractConnector {
     private apiUrl: string;
     private token: string;
     private autoReconnect: boolean = true;
@@ -18,6 +19,7 @@ export class WebSocketConnector {
     private attachedEntities: Map<UUID, AbstractEntity> = new Map<UUID, AbstractEntity>();
 
     constructor(apiUrl: string, authToken: string, autoReconnect: boolean = false) {
+        super();
         this.autoReconnect = autoReconnect;
         this.apiUrl = apiUrl;
         this.token = authToken
@@ -33,7 +35,7 @@ export class WebSocketConnector {
         if (this.errorCount > 1) {
             ApplicationLogger.error("Maximum reconnection attempts reached. Stopping auto-reconnect.", {service: this.constructor.name});
             this.autoReconnect = false;
-            return;
+            return Promise.resolve();
         }
 
         this.socket.onopen = () => {
@@ -64,6 +66,7 @@ export class WebSocketConnector {
                 this.socket = null;
             }
         };
+        return Promise.resolve();
     }
 
     disconnect() {
@@ -73,11 +76,12 @@ export class WebSocketConnector {
         if (this.socket) {
             this.socket.close();
         }
+        return Promise.resolve()
     }
 
 
     attachEntity(entity: AbstractEntity) {
-        ApplicationLogger.info(`Attempting to attach entity: ${entity.getId()}` , {service: this.constructor.name});
+        ApplicationLogger.info(`Attempting to attach entity: ${entity.getId()}`, {service: this.constructor.name});
 
         this.attachedEntities.set(entity.getId(), entity);
 
