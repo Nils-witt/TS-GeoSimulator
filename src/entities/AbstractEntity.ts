@@ -65,6 +65,8 @@ export abstract class AbstractEntity {
     abstract start(): void;
 
     abstract stop(): void;
+    abstract setup(): Promise<void>;
+
 
     setPosition(position: LatLonPosition | null): void {
         this.position = position;

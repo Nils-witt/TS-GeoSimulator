@@ -45,9 +45,11 @@ export class RouteSimulator extends AbstractSimulator {
 
         if (!this.route || this.route.length === 0) {
             // emit error event via base class
+            ApplicationLogger.error('Failed to fetch route, cannot start simulation.', {service: this.constructor.name});
             this.emit(new Event('error'));
             return;
         }
+        ApplicationLogger.info('Route fetched successfully.', {service: this.constructor.name, data: {routeLength: this.route.length}});
     }
 
     start(): void {

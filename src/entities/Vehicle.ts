@@ -7,6 +7,7 @@ import {ApplicationLogger} from '../utils/Logger';
 export class Vehicle extends AbstractEntity {
 
     private movementType: string;
+    private simulator: RouteSimulator | null = null;
 
     constructor(id: UUID, movementType = 'driving') {
         super(id);
@@ -17,18 +18,22 @@ export class Vehicle extends AbstractEntity {
         return `Vehicle ID: ${this.id}, Created At: ${this.createdAt.toISOString()}, Updated At: ${this.updatedAt.toISOString()}`;
     }
 
-    start(): void {
-        ApplicationLogger.info(`Vehicle ID: ${this.id} started simulation.`, {service: this.constructor.name});
-
-        const simulator = new RouteSimulator({latitude: 50.7373889, longitude: 7.0981944},
+    async setup() {
+        this.simulator = new RouteSimulator({latitude: 50.7373889, longitude: 7.0981944},
             {latitude: 50.748444, longitude: 7.090717},
             {speedMps: 15, updateIntervalMs: 2000, profile: this.movementType} // 15 m/s ~ 54 km/h
         );
-
-        simulator.on('positionUpdate', (event) => {
+        await this.simulator.setup();
+        this.simulator.on('positionUpdate', (event) => {
             this.setPosition((event as PositionUpdateEvent).getPosition());
         });
-        simulator.start();
+    }
+
+    start(): void {
+        ApplicationLogger.info(`Vehicle ID: ${this.id} started simulation.`, {service: this.constructor.name});
+        if (this.simulator) {
+            this.simulator.start();
+        }
     }
 
     stop(): void {

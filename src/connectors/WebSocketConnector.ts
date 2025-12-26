@@ -51,7 +51,7 @@ export class WebSocketConnector extends AbstractConnector {
         this.socket.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data as string) as WebSocketMessage;
-                ApplicationLogger.debug('Received WebSocket message:', {service: this.constructor.name, data: data});
+                ApplicationLogger.debug(`Received WebSocket message: ${event.data}`, {service: this.constructor.name, data: data});
                 // Handle incoming messages as needed
             } catch (e) {
                 ApplicationLogger.error('Error parsing WebSocket message:', {
