@@ -1,3 +1,8 @@
 node_modules/
 dist/
 .DS_Store
+logs/
+data/
+.env
+*.log
+.idea/
