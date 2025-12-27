@@ -62,19 +62,20 @@ export class RouteSimulator extends AbstractSimulator {
             this.setPosition(this.startPos);
             return;
         }
-        ApplicationLogger.info('Preparing to start', {service: this.constructor.name});
+        ApplicationLogger.info('Preparing to start', {service: this.constructor.name, id: this.getId()});
 
         await this.fetchRoute();
 
         if (!this.route || this.route.length === 0) {
             // emit error event via base class
-            ApplicationLogger.error('Failed to fetch route, cannot start simulation.', {service: this.constructor.name});
+            ApplicationLogger.error('Failed to fetch route, cannot start simulation.', {service: this.constructor.name, id: this.getId()});
             this.emit(new Event('error'));
             return;
         }
         ApplicationLogger.info('Route fetched successfully.', {
             service: this.constructor.name,
-            data: {routeLength: this.route.length}
+            data: {routeLength: this.route.length},
+            id: this.getId()
         });
     }
 
@@ -89,7 +90,7 @@ export class RouteSimulator extends AbstractSimulator {
         // initialize position to the first point
         this.setPosition(this.route[0]);
 
-        ApplicationLogger.info('Starting simulation.', {service: this.constructor.name});
+        ApplicationLogger.info('Starting simulation.', {service: this.constructor.name, id: this.getId()});
 
         this.timer = setInterval(() => this.tick(), this.options.updateIntervalMs);
     }
@@ -115,7 +116,7 @@ export class RouteSimulator extends AbstractSimulator {
                 clearTimeout(timeout);
 
                 if (!resp.ok) {
-                    ApplicationLogger.warn(`Failed to fetch route (status: ${resp.status}). Attempt ${attempt} of ${this.options.maxRetries}.`, {service: this.constructor.name});
+                    ApplicationLogger.warn(`Failed to fetch route (status: ${resp.status}). Attempt ${attempt} of ${this.options.maxRetries}.`, {service: this.constructor.name, id: this.getId()});
                     // handle 429 with potential Retry-After header
                     if (resp.status === 429) {
                         const ra = resp.headers.get('Retry-After');
@@ -130,18 +131,18 @@ export class RouteSimulator extends AbstractSimulator {
 
                 const json = await resp.json() as OSRMResponse;
                 if (!json || !json.routes || json.routes.length === 0) {
-                    ApplicationLogger.error('No routes found in response.', {service: this.constructor.name});
+                    ApplicationLogger.error('No routes found in response.', {service: this.constructor.name, id: this.getId()});
                     break;
                 }
-                ApplicationLogger.info(`New Route from ${json.waypoints[0].location} (${json.waypoints[0].name}) to ${json.waypoints[1].location} (${json.waypoints[1].name}) with distance ${json.routes[0].distance} meters and duration ${json.routes[0].duration} seconds.`, {service: this.constructor.name});
+                ApplicationLogger.info(`New Route from ${json.waypoints[0].location} (${json.waypoints[0].name}) to ${json.waypoints[1].location} (${json.waypoints[1].name}) with distance ${json.routes[0].distance} meters and duration ${json.routes[0].duration} seconds.`, {service: this.constructor.name, id: this.getId()});
                 const etaSeconds = json.routes[0].duration;
                 const eta = new Date(Date.now() + etaSeconds * 1000);
-                ApplicationLogger.info(`Estimated Time of Arrival: ${getFormattedDate(eta)}`, {service: this.constructor.name});
+                ApplicationLogger.info(`Estimated Time of Arrival: ${getFormattedDate(eta)} (${(etaSeconds / 60).toFixed(1)} Minutes)`, {service: this.constructor.name, id: this.getId()});
                 const coords: number[][] = json.routes[0].geometry.coordinates;
                 this.route = coords.map((c: number[]) => ({latitude: c[1], longitude: c[0]}));
                 return;
             } catch {
-                ApplicationLogger.error('Failed to fetch route:', {service: this.constructor.name});
+                ApplicationLogger.error('Failed to fetch route:', {service: this.constructor.name, id: this.getId()});
 
                 // on abort or network error, backoff then retry
                 await new Promise((r) => setTimeout(r, 200 * attempt));
@@ -176,12 +177,12 @@ export class RouteSimulator extends AbstractSimulator {
             // if reached end
             if (this.currentIndex >= this.route.length - 1) {
                 if (this.options.loop ) {
-                    ApplicationLogger.info('Looping route simulation back to start.', {service: this.constructor.name});
+                    ApplicationLogger.info('Looping route simulation back to start.', {service: this.constructor.name, id: this.getId()});
                     this.currentIndex = 0;
                     this.setPosition(this.route[0]);
                     return;
                 }
-                ApplicationLogger.info('Route simulation finished.', {service: this.constructor.name});
+                ApplicationLogger.info('Route simulation finished.', {service: this.constructor.name, id: this.getId()});
                 this.emit(new RouteFinishedEvent())
                 this.stop();
             }

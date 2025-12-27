@@ -27,7 +27,7 @@ export class RandomRouteSimulator extends AbstractSimulator {
     }
 
     async setup(): Promise<void> {
-        ApplicationLogger.info('Ready to start', {service: this.constructor.name});
+        ApplicationLogger.info('Ready to start', {service: this.constructor.name, id: this.getId()});
     }
 
 
@@ -59,9 +59,9 @@ export class RandomRouteSimulator extends AbstractSimulator {
             this.setPosition((event as PositionUpdateEvent).getPosition());
         });
         new_route.on('routeFinished', () => {
-            ApplicationLogger.info('Route Finished successfully.');
+            ApplicationLogger.info('Route Finished successfully.', {service: this.constructor.name, id: this.getId()});
             const waitTillNewRoute = randomInt(1,50) * 1000;
-            ApplicationLogger.info(`Waiting ${waitTillNewRoute/1000} seconds before starting new route.`);
+            ApplicationLogger.info(`Waiting ${waitTillNewRoute/1000} seconds before starting new route.`, {service: this.constructor.name, id: this.getId()});
             setTimeout(() => {
                 this.runNewRoute();
             }, waitTillNewRoute);
@@ -69,17 +69,15 @@ export class RandomRouteSimulator extends AbstractSimulator {
         this.currentRouteSimulator = new_route;
         new_route.setup().then(() => {
             new_route.start();
-            ApplicationLogger.info(`Starting new route. From ${start.latitude} ${start.longitude} to ${end.latitude} ${end.longitude}`, {service: this.constructor.name});
+            ApplicationLogger.info(`Starting new route. From ${start.latitude} ${start.longitude} to ${end.latitude} ${end.longitude}`, {service: this.constructor.name, id: this.getId()});
         }).catch((error) => {
-            ApplicationLogger.error(`Error during setup of new route: ${error}`, {service: this.constructor.name});
+            ApplicationLogger.error(`Error during setup of new route: ${error}`, {service: this.constructor.name, id: this.getId()});
         });
     }
 
     start(): void {
-        ApplicationLogger.info('Starting simulation.', {service: this.constructor.name});
-
+        ApplicationLogger.info('Starting simulation.', {service: this.constructor.name, id: this.getId()});
         this.runNewRoute();
-
     }
 
     stop(): void {

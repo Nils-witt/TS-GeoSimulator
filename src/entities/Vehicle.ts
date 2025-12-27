@@ -25,14 +25,17 @@ export class Vehicle extends AbstractEntity {
     }
 
     start(): void {
-        ApplicationLogger.info(`Vehicle ID: ${this.id} started simulation.`, {service: this.constructor.name});
+        ApplicationLogger.info(`Vehicle ID: ${this.id} started simulation.`, {service: this.constructor.name, id: this.getId()});
         if (this.simulator) {
             this.simulator.start();
         }
     }
 
     stop(): void {
-        console.log(`Vehicle ${this.id} stopped.`);
+        ApplicationLogger.info("Vehicle ID: ${this.id} stopped simulation.", {service: this.constructor.name, id: this.getId()});
+        if (this.simulator) {
+            this.simulator.stop();
+        }
     }
 
 }

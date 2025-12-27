@@ -33,25 +33,25 @@ class GeoSimulator {
 
     async setUpSimulations() {
         if (!this.config) {
-            ApplicationLogger.error('Configuration not loaded. Cannot set up simulations.', {service: this.constructor.name});
+            ApplicationLogger.error('Configuration not loaded. Cannot set up simulations.', {service: this.constructor.name, id: 'Main'});
             return;
         }
         // Set up simulations based on this.config
-        ApplicationLogger.info('Setting up simulations based on configuration.', {service: this.constructor.name});
+        ApplicationLogger.info('Setting up simulations based on configuration.', {service: this.constructor.name, id: 'Main'});
 
         for (const conn of this.config.connectors) {
-            ApplicationLogger.info(`Configuring connector: ${conn.connector} at ${conn.id}`, {service: this.constructor.name});
+            ApplicationLogger.info(`Configuring connector: ${conn.connector} at ${conn.id}`, {service: this.constructor.name, id: 'Main'});
             // Here you would set up the actual connector instances
             if (conn.connector === 'WebSocketConnector') {
-                const connector = new WebSocketConnector(conn.data['url'] as string, conn.data['token'] as string, true);
+                const connector = new WebSocketConnector(conn.data['url'] as string, conn.data['token'] as string, true, conn.id);
                 this.connectors.set(conn.id, connector);
                 await connector.setup();
-                ApplicationLogger.info(`WebSocketConnector configured with data: ${JSON.stringify(conn.data)}`, {service: this.constructor.name});
+                ApplicationLogger.info(`WebSocketConnector configured with data: ${JSON.stringify(conn.data)}`, {service: this.constructor.name, id: 'Main'});
             }
         }
 
         for (const vehicle of this.config.vehicles) {
-            ApplicationLogger.info(`Setting up simulation for vehicle ID: ${vehicle.id}`, {service: this.constructor.name});
+            ApplicationLogger.info(`Setting up simulation for vehicle ID: ${vehicle.id}`, {service: this.constructor.name, id: 'Main'});
             if (!vehicle.enabled) {
                 continue;
             }
@@ -86,7 +86,7 @@ class GeoSimulator {
 
 
             if (simulatorInstance == null) {
-                ApplicationLogger.error(`Simulator instance could not be created. Vehicle ID: ${vehicle.id}`, {service: this.constructor.name});
+                ApplicationLogger.error(`Simulator instance could not be created. Vehicle ID: ${vehicle.id}`, {service: this.constructor.name, id: 'Main'});
                 continue
             }
             await simVehicle.setup(simulatorInstance);
@@ -97,16 +97,16 @@ class GeoSimulator {
                 const connector = this.connectors.get(connId);
                 if (connector) {
                     connector.attachEntity(simVehicle);
-                    ApplicationLogger.info(`Attached connector ${connId} to vehicle ${vehicle.id}`, {service: this.constructor.name});
+                    ApplicationLogger.info(`Attached connector ${connId} to vehicle ${vehicle.id}`, {service: this.constructor.name, id: 'Main'});
                 } else {
-                    ApplicationLogger.warn(`Connector ${connId} not found for vehicle ${vehicle.id}`, {service: this.constructor.name});
+                    ApplicationLogger.warn(`Connector ${connId} not found for vehicle ${vehicle.id}`, {service: this.constructor.name, id: 'Main'});
                 }
             }
         }
     }
 
     async start() {
-        ApplicationLogger.info('Starting GeoSimulator', {service: this.constructor.name});
+        ApplicationLogger.info('Starting GeoSimulator', {service: this.constructor.name, id: 'Main'});
         this.loadConfig();
 
         await this.setUpSimulations();
