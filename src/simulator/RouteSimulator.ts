@@ -1,6 +1,8 @@
 import {AbstractSimulator} from './AbstractSimulator';
 import {LatLonPosition} from '../Types';
 import {ApplicationLogger} from '../utils/Logger';
+import {RouteFinishedEvent} from "../events/RouteFinishedEvent";
+import {getFormattedDate} from "../utils/Helpers";
 
 export interface RouteSimulatorOptions {
     serverUrl?: string; // e.g. https://router.project-osrm.org/route/v1
@@ -9,6 +11,23 @@ export interface RouteSimulatorOptions {
     updateIntervalMs?: number;
     maxRetries?: number;
     fetchTimeoutMs?: number;
+    start: LatLonPosition;
+    end: LatLonPosition;
+}
+
+
+export interface OSRMResponse {
+    routes: {
+        geometry: {
+            coordinates: number[][];
+        };
+        duration: number;
+        distance: number;
+    }[];
+    waypoints: {
+        location: number[];
+        name: string;
+    }[];
 }
 
 export class RouteSimulator extends AbstractSimulator {
@@ -20,10 +39,10 @@ export class RouteSimulator extends AbstractSimulator {
     private currentIndex = 0;
     private remainingDistanceInSegment = 0; // meters
 
-    constructor(start: LatLonPosition, end: LatLonPosition, options: RouteSimulatorOptions = {}) {
+    constructor(options: RouteSimulatorOptions) {
         super();
-        this.startPos = start;
-        this.endPos = end;
+        this.startPos = options.start;
+        this.endPos = options.end;
         this.options = {
             serverUrl: options.serverUrl ?? 'https://router.project-osrm.org/route/v1',
             profile: options.profile ?? 'driving',
@@ -31,6 +50,8 @@ export class RouteSimulator extends AbstractSimulator {
             updateIntervalMs: options.updateIntervalMs ?? 1000,
             maxRetries: options.maxRetries ?? 3,
             fetchTimeoutMs: options.fetchTimeoutMs ?? 10000,
+            start: options.start,
+            end: options.end,
         };
     }
 
@@ -49,7 +70,10 @@ export class RouteSimulator extends AbstractSimulator {
             this.emit(new Event('error'));
             return;
         }
-        ApplicationLogger.info('Route fetched successfully.', {service: this.constructor.name, data: {routeLength: this.route.length}});
+        ApplicationLogger.info('Route fetched successfully.', {
+            service: this.constructor.name,
+            data: {routeLength: this.route.length}
+        });
     }
 
     start(): void {
@@ -102,12 +126,15 @@ export class RouteSimulator extends AbstractSimulator {
                     continue;
                 }
 
-                const json = await resp.json() as { routes: { geometry: { coordinates: number[][] } }[] };
+                const json = await resp.json() as OSRMResponse;
                 if (!json || !json.routes || json.routes.length === 0) {
                     ApplicationLogger.error('No routes found in response.', {service: this.constructor.name});
                     break;
                 }
-
+                ApplicationLogger.info(`New Route from ${json.waypoints[0].location} (${json.waypoints[0].name}) to ${json.waypoints[1].location} (${json.waypoints[1].name}) with distance ${json.routes[0].distance} meters and duration ${json.routes[0].duration} seconds.`, {service: this.constructor.name});
+                const etaSeconds = json.routes[0].duration;
+                const eta = new Date(Date.now() + etaSeconds * 1000);
+                ApplicationLogger.info(`Estimated Time of Arrival: ${getFormattedDate(eta)}`, {service: this.constructor.name});
                 const coords: number[][] = json.routes[0].geometry.coordinates;
                 this.route = coords.map((c: number[]) => ({latitude: c[1], longitude: c[0]}));
                 return;
@@ -125,7 +152,6 @@ export class RouteSimulator extends AbstractSimulator {
 
     private tick(): void {
         if (!this.route || this.currentIndex >= this.route.length - 1) {
-            ApplicationLogger.info('Route completed stopping simulator.', {service: this.constructor.name});
             this.stop();
             return;
         }
@@ -147,6 +173,8 @@ export class RouteSimulator extends AbstractSimulator {
             this.remainingDistanceInSegment = 0;
             // if reached end
             if (this.currentIndex >= this.route.length - 1) {
+                ApplicationLogger.info('Route simulation finished.', {service: this.constructor.name});
+                this.emit(new RouteFinishedEvent())
                 this.stop();
             }
             return;

@@ -1,6 +1,7 @@
 import {UUID} from 'crypto';
 import {EventListener, LatLonPosition} from '../Types';
 import {PositionUpdateEvent} from '../events/PositionUpdateEvent';
+import {AbstractSimulator} from "../simulator/AbstractSimulator";
 
 export function offsetPosition(
     latLon: LatLonPosition,
@@ -65,7 +66,7 @@ export abstract class AbstractEntity {
     abstract start(): void;
 
     abstract stop(): void;
-    abstract setup(): Promise<void>;
+    abstract setup(simulator: AbstractSimulator): Promise<void>;
 
 
     setPosition(position: LatLonPosition | null): void {

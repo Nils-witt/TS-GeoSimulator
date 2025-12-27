@@ -1,4 +1,5 @@
 import winston, {createLogger, format} from 'winston';
+import {getFormattedDate} from "./Helpers";
 
 
 export const ApplicationLogger = createLogger({
@@ -19,16 +20,7 @@ export const ApplicationLogger = createLogger({
     ],
 });
 
-const getFormattedDate = () => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const seconds = String(now.getSeconds()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-};
+
 
 const myFormat = format.printf((info) => {
     const service = info.service as string || 'General';
@@ -43,6 +35,6 @@ const myFormat = format.printf((info) => {
 if (process.env.NODE_ENV !== 'production') {
     ApplicationLogger.add(new winston.transports.Console({
         format: myFormat,
-        level: 'debug',
+        level: 'info',
     }));
 }

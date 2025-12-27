@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import {ConfigType, EventListener} from './Types';
+import {ConfigType, EventListener, LatLonPosition} from './Types';
 import {setInterval} from 'node:timers';
 import {ApplicationLogger} from './utils/Logger';
 import {Vehicle} from './entities/Vehicle';
@@ -7,6 +7,9 @@ import {UUID} from 'crypto';
 import {AbstractConnector} from './connectors/AbstractConnector';
 import {WebSocketConnector} from './connectors/WebSocketConnector';
 import {config} from 'dotenv';
+import {RouteSimulator} from "./simulator/RouteSimulator";
+import {AbstractSimulator} from "./simulator/AbstractSimulator";
+import {RandomRouteSimulator} from "./simulator/RandomRouteSimulator";
 
 config();
 
@@ -49,8 +52,44 @@ class GeoSimulator {
 
         for (const vehicle of this.config.vehicles) {
             ApplicationLogger.info(`Setting up simulation for vehicle ID: ${vehicle.id}`, {service: this.constructor.name});
-            const simVehicle = new Vehicle(vehicle.id as UUID, vehicle.movementType);
-            await simVehicle.setup();
+            if (!vehicle.enabled) {
+                continue;
+            }
+            const simVehicle = new Vehicle(vehicle.id as UUID);
+            let simulatorInstance: AbstractSimulator | null = null;
+
+            if (vehicle.simulator === 'RouteSimulator') {
+                const data = vehicle.data as Record<string, string | number | boolean | LatLonPosition>;
+
+                simulatorInstance = new RouteSimulator({
+                        start: data['start'] as LatLonPosition,
+                        end: data['end'] as LatLonPosition,
+                        speedMps: data['speed'] as number,
+                        updateIntervalMs: 2000,
+                        profile: data['movementType'] as string || 'driving'
+                    }
+                );
+
+            } else if (vehicle.simulator === 'RandomRouteSimulator') {
+                const data = vehicle.data as Record<string, string | number | boolean | LatLonPosition>;
+                simulatorInstance = new RandomRouteSimulator({
+                    coord1: data['corner1'] as LatLonPosition,
+                    coord2: data['corner2'] as LatLonPosition,
+                    routeSimulatorOptions: {
+                        speedMps: data['speed'] as number,
+                        updateIntervalMs: 2000,
+                        profile: data['movementType'] as string || 'driving'
+                    }
+                });
+
+            }
+
+
+            if (simulatorInstance == null) {
+                ApplicationLogger.error(`Simulator instance could not be created. Vehicle ID: ${vehicle.id}`, {service: this.constructor.name});
+                continue
+            }
+            await simVehicle.setup(simulatorInstance);
             this.vehicles.set(vehicle.id, simVehicle);
 
             // Attach connectors to vehicle

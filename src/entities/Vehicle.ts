@@ -1,28 +1,23 @@
 import {UUID} from 'crypto';
 import {AbstractEntity} from './AbstractEntity';
-import {RouteSimulator} from '../simulator/RouteSimulator';
 import {PositionUpdateEvent} from '../events/PositionUpdateEvent';
 import {ApplicationLogger} from '../utils/Logger';
+import {AbstractSimulator} from "../simulator/AbstractSimulator";
 
 export class Vehicle extends AbstractEntity {
 
-    private movementType: string;
-    private simulator: RouteSimulator | null = null;
+    private simulator: AbstractSimulator | null = null;
 
-    constructor(id: UUID, movementType = 'driving') {
+    constructor(id: UUID) {
         super(id);
-        this.movementType = movementType;
     }
 
     getInfo(): string {
         return `Vehicle ID: ${this.id}, Created At: ${this.createdAt.toISOString()}, Updated At: ${this.updatedAt.toISOString()}`;
     }
 
-    async setup() {
-        this.simulator = new RouteSimulator({latitude: 50.7373889, longitude: 7.0981944},
-            {latitude: 50.748444, longitude: 7.090717},
-            {speedMps: 15, updateIntervalMs: 2000, profile: this.movementType} // 15 m/s ~ 54 km/h
-        );
+    async setup(simulator: AbstractSimulator): Promise<void> {
+        this.simulator = simulator;
         await this.simulator.setup();
         this.simulator.on('positionUpdate', (event) => {
             this.setPosition((event as PositionUpdateEvent).getPosition());

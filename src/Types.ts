@@ -8,11 +8,12 @@ export interface LatLonPosition {
 
 export interface ConfigType {
     vehicles: {
+        enabled: boolean;
         id: string;
         speed: number;
         movementType: string;
-        start: LatLonPosition;
-        end: LatLonPosition;
+        simulator: string,
+        data: Record<string, string | number | boolean | LatLonPosition>;
         connectors: string[]
     }[],
     connectors: {
