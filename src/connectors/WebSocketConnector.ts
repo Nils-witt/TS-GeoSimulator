@@ -38,7 +38,7 @@ export class WebSocketConnector extends AbstractConnector {
     connect(): void {
         ApplicationLogger.info(`Connecting to WebSocket at ${this.apiUrl}...`, {service: this.constructor.name});
         this.socket = new WebSocket(this.apiUrl + '?token=' + this.token);
-        if (this.errorCount > 1) {
+        if (this.errorCount > 10) {
             ApplicationLogger.error('Maximum reconnection attempts reached. Stopping auto-reconnect.', {service: this.constructor.name});
             this.autoReconnect = false;
             return;
@@ -51,7 +51,10 @@ export class WebSocketConnector extends AbstractConnector {
         this.socket.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data as string) as WebSocketMessage;
-                ApplicationLogger.debug(`Received WebSocket message: ${event.data}`, {service: this.constructor.name, data: data});
+                ApplicationLogger.debug(`Received WebSocket message: ${event.data}`, {
+                    service: this.constructor.name,
+                    data: data
+                });
                 // Handle incoming messages as needed
             } catch (e) {
                 ApplicationLogger.error('Error parsing WebSocket message:', {
@@ -69,7 +72,7 @@ export class WebSocketConnector extends AbstractConnector {
         this.socket.onclose = () => {
             ApplicationLogger.info('Disconnected from WebSocket.', {service: this.constructor.name});
             if (this.autoReconnect) {
-                setTimeout(() => this.connect(), 1000); // Reconnect after 5 seconds
+                setTimeout(() => this.connect(), 1000 * (this.errorCount + 1)); // Reconnect after 5 seconds
             } else {
                 this.socket = null;
             }

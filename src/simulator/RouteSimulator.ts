@@ -13,6 +13,7 @@ export interface RouteSimulatorOptions {
     fetchTimeoutMs?: number;
     start: LatLonPosition;
     end: LatLonPosition;
+    loop?: boolean;
 }
 
 
@@ -52,6 +53,7 @@ export class RouteSimulator extends AbstractSimulator {
             fetchTimeoutMs: options.fetchTimeoutMs ?? 10000,
             start: options.start,
             end: options.end,
+            loop: options.loop ?? false
         };
     }
 
@@ -173,6 +175,12 @@ export class RouteSimulator extends AbstractSimulator {
             this.remainingDistanceInSegment = 0;
             // if reached end
             if (this.currentIndex >= this.route.length - 1) {
+                if (this.options.loop ) {
+                    ApplicationLogger.info('Looping route simulation back to start.', {service: this.constructor.name});
+                    this.currentIndex = 0;
+                    this.setPosition(this.route[0]);
+                    return;
+                }
                 ApplicationLogger.info('Route simulation finished.', {service: this.constructor.name});
                 this.emit(new RouteFinishedEvent())
                 this.stop();
