@@ -1,9 +1,7 @@
-import {AbstractEntity} from '../entities/AbstractEntity';
-import {UUID} from 'crypto';
-import {PositionUpdateEvent} from '../events/PositionUpdateEvent';
 import {ApplicationLogger} from '../utils/Logger';
 import {AbstractConnector} from './AbstractConnector';
 import {randomUUID} from "node:crypto";
+import {EntityPositionUpdateEvent} from "../events/EntityPositionUpdateEvent";
 
 interface WebSocketMessage {
     command: string;
@@ -17,7 +15,6 @@ export class WebSocketConnector extends AbstractConnector {
     private autoReconnect = true;
     private socket: WebSocket | null = null;
     private errorCount = 0;
-    private attachedEntities: Map<UUID, AbstractEntity> = new Map<UUID, AbstractEntity>();
 
 
     constructor(apiUrl: string, authToken: string, autoReconnect = false, id: string = randomUUID()) {
@@ -38,7 +35,7 @@ export class WebSocketConnector extends AbstractConnector {
     }
 
     connect(): void {
-        ApplicationLogger.info(`Connecting to WebSocket at ${this.apiUrl}...`, {
+        ApplicationLogger.info(`Connecting to WebSocket at ${this.apiUrl.substring(0,20)}...`, {
             service: this.constructor.name,
             id: this.getId()
         });
@@ -96,40 +93,28 @@ export class WebSocketConnector extends AbstractConnector {
         }
     }
 
+    onEntityPositionUpdate(event: EntityPositionUpdateEvent): Promise<void> {
+        const position = event.getPosition();
+        const entity = event.getEntity();
 
-    attachEntity(entity: AbstractEntity) {
-        ApplicationLogger.info(`Attempting to attach entity: ${entity.getId()}`, {
-            service: this.constructor.name,
-            id: this.getId()
-        });
-
-        this.attachedEntities.set(entity.getId(), entity);
-
-        entity.on('positionUpdate', (event: Event) => {
-            const position = (event as PositionUpdateEvent).getPosition();
-            ApplicationLogger.debug(`Received position at: ${position?.longitude.toFixed(4)} / ${position?.latitude.toFixed(4)} for entity ${entity.getId()}`, {
+        if (this.socket && this.socket.readyState == WebSocket.OPEN) {
+            const message = {
+                command: 'model.update',
+                model: 'NamedGeoReferencedItem',
+                id: entity.getId(),
+                data: {
+                    latitude: position ? position.latitude : null,
+                    longitude: position ? position.longitude : null
+                }
+            };
+            this.socket.send(JSON.stringify(message));
+        } else {
+            ApplicationLogger.warn('WebSocket is not connected. Cannot send position update.', {
                 service: this.constructor.name,
                 id: this.getId()
             });
-            if (this.socket && this.socket.readyState == WebSocket.OPEN) {
-                const message = {
-                    command: 'model.update',
-                    model: 'NamedGeoReferencedItem',
-                    id: entity.getId(),
-                    data: {
-                        latitude: position ? position.latitude : null,
-                        longitude: position ? position.longitude : null
-                    }
-                };
-                this.socket.send(JSON.stringify(message));
-            } else {
-                ApplicationLogger.warn('WebSocket is not connected. Cannot send position update.', {
-                    service: this.constructor.name,
-                    id: this.getId()
-                });
-            }
-        });
-
+        }
+        return Promise.resolve();
     }
 
 }

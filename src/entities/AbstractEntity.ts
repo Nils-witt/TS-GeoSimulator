@@ -1,7 +1,7 @@
 import {UUID} from 'crypto';
-import {EventListener, LatLonPosition} from '../Types';
-import {PositionUpdateEvent} from '../events/PositionUpdateEvent';
+import {EventListener, LatLonPosition, TimedLatLonPosition} from '../Types';
 import {AbstractSimulator} from "../simulator/AbstractSimulator";
+import {EntityPositionUpdateEvent} from "../events/EntityPositionUpdateEvent";
 
 export function offsetPosition(
     latLon: LatLonPosition,
@@ -35,7 +35,7 @@ export abstract class AbstractEntity {
     protected id: UUID;
     protected createdAt: Date;
     protected updatedAt: Date;
-    protected position: LatLonPosition | null = {latitude: 50.7373889, longitude: 7.0981944};
+    protected position: LatLonPosition | TimedLatLonPosition | null = {latitude: 50.7373889, longitude: 7.0981944};
 
     private listeners = new Map<string, EventListener[]>();
 
@@ -66,12 +66,13 @@ export abstract class AbstractEntity {
     abstract start(): void;
 
     abstract stop(): void;
+
     abstract setup(simulator: AbstractSimulator): Promise<void>;
 
 
-    setPosition(position: LatLonPosition | null): void {
+    setPosition(position: LatLonPosition | TimedLatLonPosition | null): void {
         this.position = position;
-        this.emit(new PositionUpdateEvent(position));
+        this.emit(new EntityPositionUpdateEvent(this, position));
     }
 
     getPosition(): LatLonPosition | null {

@@ -10,6 +10,7 @@ import {config} from 'dotenv';
 import {RouteSimulator} from "./simulator/RouteSimulator";
 import {AbstractSimulator} from "./simulator/AbstractSimulator";
 import {RandomRouteSimulator} from "./simulator/RandomRouteSimulator";
+import {SqliteConnector} from "./connectors/SqliteConnector";
 
 config();
 
@@ -47,6 +48,11 @@ class GeoSimulator {
                 this.connectors.set(conn.id, connector);
                 await connector.setup();
                 ApplicationLogger.info(`WebSocketConnector configured with data: ${JSON.stringify(conn.data)}`, {service: this.constructor.name, id: 'Main'});
+            }else if (conn.connector === 'SqliteConnector') {
+                const sqliteConnector = new SqliteConnector(conn.id, conn.data['databasePath'] as string);
+                this.connectors.set(conn.id, sqliteConnector);
+                await sqliteConnector.setup();
+                ApplicationLogger.info(`SqliteConnector configured.`, {service: this.constructor.name, id: 'Main'});
             }
         }
 
@@ -83,7 +89,6 @@ class GeoSimulator {
                 });
 
             }
-
 
             if (simulatorInstance == null) {
                 ApplicationLogger.error(`Simulator instance could not be created. Vehicle ID: ${vehicle.id}`, {service: this.constructor.name, id: 'Main'});

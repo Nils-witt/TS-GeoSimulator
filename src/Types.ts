@@ -5,6 +5,10 @@ export interface LatLonPosition {
     longitude: number;
 }
 
+export interface TimedLatLonPosition extends LatLonPosition {
+    timestamp: number;
+}
+
 
 export interface ConfigType {
     vehicles: {

@@ -1,7 +1,7 @@
 import {EventListener, LatLonPosition} from '../Types';
-import {PositionUpdateEvent} from '../events/PositionUpdateEvent';
 import {UUID} from "crypto";
 import {randomUUID} from "node:crypto";
+import {SimulatorPositionUpdateEvent} from "../events/SimulatorPositionUpdateEvent";
 
 
 export abstract class AbstractSimulator {
@@ -49,7 +49,7 @@ export abstract class AbstractSimulator {
         this.position = position;
         const ts = Date.now();
         this.positionsHistory.set(ts, position);
-        this.emit(new PositionUpdateEvent(position));
+        this.emit(new SimulatorPositionUpdateEvent(position));
     }
 
     abstract start(): void;

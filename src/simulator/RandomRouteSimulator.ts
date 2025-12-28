@@ -2,8 +2,8 @@ import {AbstractSimulator} from './AbstractSimulator';
 import {LatLonPosition} from '../Types';
 import {ApplicationLogger} from '../utils/Logger';
 import {RouteSimulator} from "./RouteSimulator";
-import {PositionUpdateEvent} from "../events/PositionUpdateEvent";
 import {randomInt} from "node:crypto";
+import {SimulatorPositionUpdateEvent} from "../events/SimulatorPositionUpdateEvent";
 
 export interface RandomRouteSimulatorOptions {
     coord1?: LatLonPosition;
@@ -56,7 +56,7 @@ export class RandomRouteSimulator extends AbstractSimulator {
             end,
         });
         new_route.on('positionUpdate', (event) => {
-            this.setPosition((event as PositionUpdateEvent).getPosition());
+            this.setPosition((event as SimulatorPositionUpdateEvent).getPosition());
         });
         new_route.on('routeFinished', () => {
             ApplicationLogger.info('Route Finished successfully.', {service: this.constructor.name, id: this.getId()});

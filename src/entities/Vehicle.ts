@@ -1,8 +1,8 @@
 import {UUID} from 'crypto';
 import {AbstractEntity} from './AbstractEntity';
-import {PositionUpdateEvent} from '../events/PositionUpdateEvent';
 import {ApplicationLogger} from '../utils/Logger';
 import {AbstractSimulator} from "../simulator/AbstractSimulator";
+import {SimulatorPositionUpdateEvent} from "../events/SimulatorPositionUpdateEvent";
 
 export class Vehicle extends AbstractEntity {
 
@@ -20,7 +20,7 @@ export class Vehicle extends AbstractEntity {
         this.simulator = simulator;
         await this.simulator.setup();
         this.simulator.on('positionUpdate', (event) => {
-            this.setPosition((event as PositionUpdateEvent).getPosition());
+            this.setPosition((event as SimulatorPositionUpdateEvent).getPosition());
         });
     }
 
