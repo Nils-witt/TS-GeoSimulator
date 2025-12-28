@@ -100,7 +100,7 @@ export class WebSocketConnector extends AbstractConnector {
         if (this.socket && this.socket.readyState == WebSocket.OPEN) {
             const message = {
                 command: 'model.update',
-                model: 'NamedGeoReferencedItem',
+                model: 'Unit',
                 id: entity.getId(),
                 data: {
                     latitude: position ? position.latitude : null,
