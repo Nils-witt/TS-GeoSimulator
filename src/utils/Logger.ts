@@ -4,7 +4,7 @@ import {getFormattedDate} from "./Helpers";
 const myFormat = format.printf((info) => {
     const service = info.service as string || 'General';
     const id = info.id as string || 'N/A';
-    return `${getFormattedDate()} [${info.level.padEnd(6, ' ')}] [${service.padEnd(20, ' ')}] [${id.padEnd(36, ' ')}] ${info.message as string}`;
+    return `${getFormattedDate()} [${info.level.padEnd(6, ' ')}] [${service.padEnd(20, ' ').substring(0, 20)}] [${id.padEnd(36, ' ').substring(0, 36)}] ${info.message as string}`;
 });
 
 export const ApplicationLogger = createLogger({

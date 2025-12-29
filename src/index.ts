@@ -11,6 +11,7 @@ import {RouteSimulator} from "./simulator/RouteSimulator";
 import {AbstractSimulator} from "./simulator/AbstractSimulator";
 import {RandomRouteSimulator} from "./simulator/RandomRouteSimulator";
 import {SqliteConnector} from "./connectors/SqliteConnector";
+import {EmergencyDispatchSimulator} from "./simulator/EmergencyDispatchSimulator";
 
 config();
 
@@ -87,7 +88,18 @@ class GeoSimulator {
                         profile: data['movementType'] as string || 'driving'
                     }
                 });
-
+            } else if (vehicle.simulator === 'EmergencyDispatchSimulator') {
+                const data = vehicle.data as Record<string, string | number | boolean | LatLonPosition>;
+                simulatorInstance = new EmergencyDispatchSimulator({
+                    coord1: data['corner1'] as LatLonPosition,
+                    coord2: data['corner2'] as LatLonPosition,
+                    routeSimulatorOptions: {
+                        homeLocation: data['homeLocation'] as LatLonPosition,
+                        speedMps: data['speed'] as number,
+                        updateIntervalMs: 2000,
+                        profile: data['movementType'] as string || 'driving'
+                    }
+                });
             }
 
             if (simulatorInstance == null) {

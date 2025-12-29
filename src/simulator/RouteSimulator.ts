@@ -62,7 +62,7 @@ export class RouteSimulator extends AbstractSimulator {
             this.setPosition(this.startPos);
             return;
         }
-        ApplicationLogger.info('Preparing to start', {service: this.constructor.name, id: this.getId()});
+
 
         await this.fetchRoute();
 
@@ -87,7 +87,6 @@ export class RouteSimulator extends AbstractSimulator {
 
         this.currentIndex = 0;
         this.remainingDistanceInSegment = 0;
-        // initialize position to the first point
         this.setPosition(this.route[0]);
 
         ApplicationLogger.info('Starting simulation.', {service: this.constructor.name, id: this.getId()});
@@ -103,6 +102,7 @@ export class RouteSimulator extends AbstractSimulator {
     }
 
     private async fetchRoute(): Promise<void> {
+
         const url = `${this.options.serverUrl}/${this.options.profile}/${this.startPos.longitude},${this.startPos.latitude};${this.endPos.longitude},${this.endPos.latitude}?overview=full&geometries=geojson`;
 
         let attempt = 0;

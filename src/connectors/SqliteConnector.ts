@@ -4,6 +4,7 @@ import {Database, open} from 'sqlite'
 import {TimedLatLonPosition} from "../Types";
 import {ApplicationLogger} from "../utils/Logger";
 import {EntityPositionUpdateEvent} from "../events/EntityPositionUpdateEvent";
+import {EntityStatusEvent} from "../events/EntityStatusEvent";
 
 export class SqliteConnector extends AbstractConnector {
     private db: Database | null = null;
@@ -28,6 +29,22 @@ export class SqliteConnector extends AbstractConnector {
                     entity.getId(),
                     position.latitude,
                     position.longitude,
+                    timestamp
+                );
+            }
+        }
+    }
+
+    async onEntityStatusUpdate(event: EntityStatusEvent): Promise<void> {
+        if (this.db && event.getEntity()) {
+            const entity = event.getEntity();
+            const status = event.getStatus();
+            if (status) {
+                const timestamp = Date.now();
+                await this.db.run(
+                    'INSERT INTO unit_status (entity_id, status, timestamp) VALUES (?,  ?, ?)',
+                    entity.getId(),
+                    status,
                     timestamp
                 );
             }
@@ -63,6 +80,13 @@ export class SqliteConnector extends AbstractConnector {
                                entity_id TEXT    NOT NULL,
                                latitude  REAL    NULL,
                                longitude REAL    NULL,
+                               timestamp INTEGER NOT NULL
+                           )`);
+        await this.db.run(`CREATE TABLE IF NOT EXISTS unit_status
+                           (
+                               id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                               entity_id TEXT    NOT NULL,
+                               status    INTEGER NOT NULL,
                                timestamp INTEGER NOT NULL
                            )`);
         ApplicationLogger.info("SQLite database setup complete.", {service: this.constructor.name, id: this.getId()});

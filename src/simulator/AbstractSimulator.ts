@@ -2,6 +2,7 @@ import {EventListener, LatLonPosition} from '../Types';
 import {UUID} from "crypto";
 import {randomUUID} from "node:crypto";
 import {SimulatorPositionUpdateEvent} from "../events/SimulatorPositionUpdateEvent";
+import {SimulatorStatusEvent} from "../events/SimulatorStatusEvent";
 
 
 export abstract class AbstractSimulator {
@@ -10,6 +11,7 @@ export abstract class AbstractSimulator {
     private position: LatLonPosition | null = null;
     private positionsHistory: Map<number, LatLonPosition | null> = new Map<number, LatLonPosition | null>();
     private id: UUID;
+    private status = 6;
 
     constructor(id: UUID = randomUUID()) {
         this.id = id;
@@ -50,6 +52,15 @@ export abstract class AbstractSimulator {
         const ts = Date.now();
         this.positionsHistory.set(ts, position);
         this.emit(new SimulatorPositionUpdateEvent(position));
+    }
+
+    protected setStatus(status: number): void {
+        this.status = status;
+        this.emit(new SimulatorStatusEvent(status));
+    }
+
+    public getStatus(): number {
+        return this.status;
     }
 
     abstract start(): void;
