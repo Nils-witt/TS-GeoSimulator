@@ -5,6 +5,7 @@ import {TimedLatLonPosition} from "../Types";
 import {ApplicationLogger} from "../utils/Logger";
 import {EntityPositionUpdateEvent} from "../events/EntityPositionUpdateEvent";
 import {EntityStatusEvent} from "../events/EntityStatusEvent";
+import {EntityRouteEvent} from "../events/EntityRouteEvent";
 
 export class SqliteConnector extends AbstractConnector {
     private db: Database | null = null;
@@ -51,6 +52,21 @@ export class SqliteConnector extends AbstractConnector {
         }
     }
 
+    async onEntityRouteUpdate(event: EntityRouteEvent): Promise<void> {
+        if (this.db && event.getEntity()) {
+            const entity = event.getEntity();
+            const route = event.getRoute();
+            const timestamp = Date.now();
+            await this.db.run(
+                'INSERT INTO unit_routes (entity_id, route, timestamp) VALUES (?,  ?, ?)',
+                entity.getId(),
+                JSON.stringify(route),
+                timestamp
+            );
+
+        }
+    }
+
 
     connect(): void {
         /* Connection is handled in setup() */
@@ -87,6 +103,13 @@ export class SqliteConnector extends AbstractConnector {
                                id        INTEGER PRIMARY KEY AUTOINCREMENT,
                                entity_id TEXT    NOT NULL,
                                status    INTEGER NOT NULL,
+                               timestamp INTEGER NOT NULL
+                           )`);
+        await this.db.run(`CREATE TABLE IF NOT EXISTS unit_routes
+                           (
+                               id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                               entity_id TEXT    NOT NULL,
+                               route     TEXT    NOT NULL,
                                timestamp INTEGER NOT NULL
                            )`);
         ApplicationLogger.info("SQLite database setup complete.", {service: this.constructor.name, id: this.getId()});

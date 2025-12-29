@@ -5,6 +5,9 @@ import {AbstractSimulator} from "../simulator/AbstractSimulator";
 import {SimulatorPositionUpdateEvent} from "../events/SimulatorPositionUpdateEvent";
 import {EntityStatusEvent} from "../events/EntityStatusEvent";
 import {SimulatorStatusEvent} from "../events/SimulatorStatusEvent";
+import {LatLonPosition} from "../Types";
+import {EntityRouteEvent} from "../events/EntityRouteEvent";
+import {SimulatorRouteEvent} from "../events/SimulatorRouteEvent";
 
 export class Vehicle extends AbstractEntity {
 
@@ -28,6 +31,11 @@ export class Vehicle extends AbstractEntity {
         this.simulator.on('statusUpdate', (event) => {
             this.setStatus((event as SimulatorStatusEvent).getStatus());
         });
+        this.simulator.on('routeUpdate', (event) => {
+            this.emit(new EntityRouteEvent(this, (event as SimulatorRouteEvent).getRoute()));
+            ApplicationLogger.info(`Vehicle ID: ${this.id} route updated.`, {service: this.constructor.name, id: this.getId()});
+        });
+        ApplicationLogger.info(`Vehicle ID: ${this.id} setup completed.`, {service: this.constructor.name, id: this.getId()});
     }
 
     start(): void {
@@ -55,4 +63,10 @@ export class Vehicle extends AbstractEntity {
         this.status = status;
     }
 
+    public getRoute(): LatLonPosition[] | null {
+        if (this.simulator) {
+            return this.simulator.getRoute();
+        }
+        return null;
+    }
 }

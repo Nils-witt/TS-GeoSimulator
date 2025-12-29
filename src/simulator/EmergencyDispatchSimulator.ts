@@ -5,6 +5,7 @@ import {RouteSimulator} from "./RouteSimulator";
 import {randomInt} from "node:crypto";
 import {SimulatorPositionUpdateEvent} from "../events/SimulatorPositionUpdateEvent";
 import {getFormattedDate} from "../utils/Helpers";
+import {SimulatorRouteEvent} from "../events/SimulatorRouteEvent";
 
 export interface EmergencyDispatchSimulatorOptions {
     coord1?: LatLonPosition;
@@ -57,10 +58,15 @@ export class EmergencyDispatchSimulator extends AbstractSimulator {
             start: this.getPosition()!,
             end,
         });
-        await new_route.setup();
         new_route.on('positionUpdate', (event) => {
             this.setPosition((event as SimulatorPositionUpdateEvent).getPosition());
         });
+        new_route.on('routeUpdate', (event) => {
+
+            this.setRoute((event as SimulatorRouteEvent).getRoute());
+        });
+        await new_route.setup();
+
         this.currentRouteSimulator = new_route;
 
         return new Promise<void>((resolve, reject) => {
@@ -81,10 +87,14 @@ export class EmergencyDispatchSimulator extends AbstractSimulator {
             start: this.getPosition()!,
             end: this.options.routeSimulatorOptions.homeLocation!,
         });
-        await new_route.setup();
         new_route.on('positionUpdate', (event) => {
             this.setPosition((event as SimulatorPositionUpdateEvent).getPosition());
         });
+        new_route.on('routeUpdate', (event) => {
+            this.setRoute((event as SimulatorRouteEvent).getRoute());
+        });
+        await new_route.setup();
+
         this.currentRouteSimulator = new_route;
 
         return new Promise<void>((resolve, reject) => {

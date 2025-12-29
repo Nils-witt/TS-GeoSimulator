@@ -35,7 +35,6 @@ export class RouteSimulator extends AbstractSimulator {
     private startPos: LatLonPosition;
     private endPos: LatLonPosition;
     private options: Required<RouteSimulatorOptions>;
-    private route: LatLonPosition[] = [];
     private timer: NodeJS.Timeout | null = null;
     private currentIndex = 0;
     private remainingDistanceInSegment = 0; // meters
@@ -66,7 +65,7 @@ export class RouteSimulator extends AbstractSimulator {
 
         await this.fetchRoute();
 
-        if (!this.route || this.route.length === 0) {
+        if (!this.getRoute() || this.getRoute().length === 0) {
             // emit error event via base class
             ApplicationLogger.error('Failed to fetch route, cannot start simulation.', {service: this.constructor.name, id: this.getId()});
             this.emit(new Event('error'));
@@ -74,7 +73,7 @@ export class RouteSimulator extends AbstractSimulator {
         }
         ApplicationLogger.info('Route fetched successfully.', {
             service: this.constructor.name,
-            data: {routeLength: this.route.length},
+            data: {routeLength: this.getRoute().length},
             id: this.getId()
         });
     }
@@ -87,7 +86,7 @@ export class RouteSimulator extends AbstractSimulator {
 
         this.currentIndex = 0;
         this.remainingDistanceInSegment = 0;
-        this.setPosition(this.route[0]);
+        this.setPosition(this.getRoute()[0]);
 
         ApplicationLogger.info('Starting simulation.', {service: this.constructor.name, id: this.getId()});
 
@@ -139,7 +138,7 @@ export class RouteSimulator extends AbstractSimulator {
                 const eta = new Date(Date.now() + etaSeconds * 1000);
                 ApplicationLogger.info(`Estimated Time of Arrival: ${getFormattedDate(eta)} (${(etaSeconds / 60).toFixed(1)} Minutes)`, {service: this.constructor.name, id: this.getId()});
                 const coords: number[][] = json.routes[0].geometry.coordinates;
-                this.route = coords.map((c: number[]) => ({latitude: c[1], longitude: c[0]}));
+                this.setRoute(coords.map((c: number[]) => ({latitude: c[1], longitude: c[0]})));
                 return;
             } catch {
                 ApplicationLogger.error('Failed to fetch route:', {service: this.constructor.name, id: this.getId()});
@@ -150,17 +149,17 @@ export class RouteSimulator extends AbstractSimulator {
             }
         }
 
-        this.route = [];
+        this.setRoute([]);
     }
 
     private tick(): void {
-        if (!this.route || this.currentIndex >= this.route.length - 1) {
+        if (!this.getRoute() || this.currentIndex >= this.getRoute().length - 1) {
             this.stop();
             return;
         }
 
-        const from = this.route[this.currentIndex];
-        const to = this.route[this.currentIndex + 1];
+        const from = this.getRoute()[this.currentIndex];
+        const to = this.getRoute()[this.currentIndex + 1];
         const segmentDist = haversineDistance(from, to);
 
         const step = this.options.speedMps * (this.options.updateIntervalMs / 1000);
@@ -172,14 +171,14 @@ export class RouteSimulator extends AbstractSimulator {
         if (step >= this.remainingDistanceInSegment) {
             // move to next waypoint
             this.currentIndex++;
-            this.setPosition(this.route[this.currentIndex]);
+            this.setPosition(this.getRoute()[this.currentIndex]);
             this.remainingDistanceInSegment = 0;
             // if reached end
-            if (this.currentIndex >= this.route.length - 1) {
+            if (this.currentIndex >= this.getRoute().length - 1) {
                 if (this.options.loop ) {
                     ApplicationLogger.info('Looping route simulation back to start.', {service: this.constructor.name, id: this.getId()});
                     this.currentIndex = 0;
-                    this.setPosition(this.route[0]);
+                    this.setPosition(this.getRoute()[0]);
                     return;
                 }
                 ApplicationLogger.info('Route simulation finished.', {service: this.constructor.name, id: this.getId()});

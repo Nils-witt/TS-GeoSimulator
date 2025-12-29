@@ -3,6 +3,7 @@ import {UUID} from "crypto";
 import {randomUUID} from "node:crypto";
 import {SimulatorPositionUpdateEvent} from "../events/SimulatorPositionUpdateEvent";
 import {SimulatorStatusEvent} from "../events/SimulatorStatusEvent";
+import {SimulatorRouteEvent} from "../events/SimulatorRouteEvent";
 
 
 export abstract class AbstractSimulator {
@@ -12,6 +13,8 @@ export abstract class AbstractSimulator {
     private positionsHistory: Map<number, LatLonPosition | null> = new Map<number, LatLonPosition | null>();
     private id: UUID;
     private status = 6;
+
+    private route: LatLonPosition[] = [];
 
     constructor(id: UUID = randomUUID()) {
         this.id = id;
@@ -41,6 +44,15 @@ export abstract class AbstractSimulator {
 
     getPositionsHistory(): Map<number, LatLonPosition | null> {
         return this.positionsHistory;
+    }
+
+    getRoute(): LatLonPosition[] {
+        return this.route;
+    }
+
+    setRoute(route: LatLonPosition[]): void {
+        this.route = route;
+        this.emit(new SimulatorRouteEvent(route));
     }
 
     /**

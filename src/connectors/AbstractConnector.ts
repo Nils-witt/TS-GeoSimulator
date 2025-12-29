@@ -2,6 +2,7 @@ import {AbstractEntity} from '../entities/AbstractEntity';
 import {UUID} from "crypto";
 import {EntityPositionUpdateEvent} from "../events/EntityPositionUpdateEvent";
 import {EntityStatusEvent} from "../events/EntityStatusEvent";
+import {EntityRouteEvent} from "../events/EntityRouteEvent";
 
 
 export abstract class AbstractConnector {
@@ -21,6 +22,7 @@ export abstract class AbstractConnector {
 
     abstract onEntityPositionUpdate(event: EntityPositionUpdateEvent): Promise<void>;
     abstract onEntityStatusUpdate(event: EntityStatusEvent): Promise<void>;
+    abstract onEntityRouteUpdate(event: EntityRouteEvent): Promise<void>;
 
     attachEntity(entity: AbstractEntity): void {
         if (this.entities.has(entity.getId())) {
@@ -34,7 +36,9 @@ export abstract class AbstractConnector {
         entity.on('statusUpdate', (event) => {
             this.onEntityStatusUpdate(event as EntityStatusEvent);
         });
-
+        entity.on('routeUpdate', (event) => {
+            this.onEntityRouteUpdate(event as EntityRouteEvent);
+        });
     };
 
     public getId(): string {
