@@ -19,7 +19,7 @@
     "@microsoft/eslint-formatter-sarif": "^3.1.0",
     "dotenv": "^17.3.1",
     "eslint": "^9.39.2",
-    "nodemon": "^3.1.11",
+    "nodemon": "^3.1.14",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
     "typescript-eslint": "^8.56.1",
