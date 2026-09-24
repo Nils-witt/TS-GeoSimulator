@@ -12,8 +12,9 @@ export interface TimedLatLonPosition extends LatLonPosition {
 
 export interface ConfigType {
     vehicles: {
+        name: string;
         enabled: boolean;
-        id: string;
+        id?: string;
         speed: number;
         movementType: string;
         simulator: string,

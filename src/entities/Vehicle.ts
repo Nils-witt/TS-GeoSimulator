@@ -8,14 +8,15 @@ import {SimulatorStatusEvent} from "../events/SimulatorStatusEvent";
 import {LatLonPosition} from "../Types";
 import {EntityRouteEvent} from "../events/EntityRouteEvent";
 import {SimulatorRouteEvent} from "../events/SimulatorRouteEvent";
+import * as fs from "node:fs";
 
 export class Vehicle extends AbstractEntity {
 
     private simulator: AbstractSimulator | null = null;
     private status = 6;
 
-    constructor(id: UUID) {
-        super(id);
+    constructor(id: UUID, name: string) {
+        super(id, name);
     }
 
     getInfo(): string {
@@ -33,20 +34,34 @@ export class Vehicle extends AbstractEntity {
         });
         this.simulator.on('routeUpdate', (event) => {
             this.emit(new EntityRouteEvent(this, (event as SimulatorRouteEvent).getRoute()));
-            ApplicationLogger.info(`Vehicle ID: ${this.id} route updated.`, {service: this.constructor.name, id: this.getId()});
+            ApplicationLogger.info(`Vehicle ID: ${this.id} route updated.`, {
+                service: this.constructor.name,
+                id: this.getId()
+            });
+            fs.mkdirSync(`data/${this.id}/`, {recursive: true});
+            fs.writeFileSync(`data/${this.id}/vehicle_${this.id}_${Date.now()}_route.json`, JSON.stringify((event as SimulatorRouteEvent).getRoute(), null, 2));
         });
-        ApplicationLogger.info(`Vehicle ID: ${this.id} setup completed.`, {service: this.constructor.name, id: this.getId()});
+        ApplicationLogger.info(`Vehicle ID: ${this.id} setup completed.`, {
+            service: this.constructor.name,
+            id: this.getId()
+        });
     }
 
     start(): void {
-        ApplicationLogger.info(`Vehicle ID: ${this.id} started simulation.`, {service: this.constructor.name, id: this.getId()});
+        ApplicationLogger.info(`Vehicle ID: ${this.id} started simulation.`, {
+            service: this.constructor.name,
+            id: this.getId()
+        });
         if (this.simulator) {
             this.simulator.start();
         }
     }
 
     stop(): void {
-        ApplicationLogger.info("Vehicle ID: ${this.id} stopped simulation.", {service: this.constructor.name, id: this.getId()});
+        ApplicationLogger.info("Vehicle ID: ${this.id} stopped simulation.", {
+            service: this.constructor.name,
+            id: this.getId()
+        });
         if (this.simulator) {
             this.simulator.stop();
         }
@@ -58,7 +73,10 @@ export class Vehicle extends AbstractEntity {
     }
 
     public setStatus(status: number): void {
-        ApplicationLogger.info(`Vehicle ID: ${this.id} status: ${status}`, {service: this.constructor.name, id: this.getId()});
+        ApplicationLogger.info(`Vehicle ID: ${this.id} status: ${status}`, {
+            service: this.constructor.name,
+            id: this.getId()
+        });
         this.emit(new EntityStatusEvent(this, status));
         this.status = status;
     }

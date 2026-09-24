@@ -12,6 +12,8 @@ import {AbstractSimulator} from "./simulator/AbstractSimulator";
 import {RandomRouteSimulator} from "./simulator/RandomRouteSimulator";
 import {SqliteConnector} from "./connectors/SqliteConnector";
 import {EmergencyDispatchSimulator} from "./simulator/EmergencyDispatchSimulator";
+import {ApiConnector} from "./connectors/ApiConnector";
+import {Unit} from "./entities/Unit";
 
 config();
 
@@ -35,34 +37,100 @@ class GeoSimulator {
 
     async setUpSimulations() {
         if (!this.config) {
-            ApplicationLogger.error('Configuration not loaded. Cannot set up simulations.', {service: this.constructor.name, id: 'Main'});
+            ApplicationLogger.error('Configuration not loaded. Cannot set up simulations.', {
+                service: this.constructor.name,
+                id: 'Main'
+            });
             return;
         }
         // Set up simulations based on this.config
-        ApplicationLogger.info('Setting up simulations based on configuration.', {service: this.constructor.name, id: 'Main'});
+        ApplicationLogger.info('Setting up simulations based on configuration.', {
+            service: this.constructor.name,
+            id: 'Main'
+        });
 
         for (const conn of this.config.connectors) {
-            ApplicationLogger.info(`Configuring connector: ${conn.connector} at ${conn.id}`, {service: this.constructor.name, id: 'Main'});
+            ApplicationLogger.info(`Configuring connector: ${conn.connector} at ${conn.id}`, {
+                service: this.constructor.name,
+                id: 'Main'
+            });
             // Here you would set up the actual connector instances
             if (conn.connector === 'WebSocketConnector') {
                 const connector = new WebSocketConnector(conn.data['url'] as string, conn.data['token'] as string, true, conn.id);
                 this.connectors.set(conn.id, connector);
                 await connector.setup();
-                ApplicationLogger.info(`WebSocketConnector configured with data: ${JSON.stringify(conn.data)}`, {service: this.constructor.name, id: 'Main'});
-            }else if (conn.connector === 'SqliteConnector') {
+                ApplicationLogger.info(`WebSocketConnector configured with data: ${JSON.stringify(conn.data)}`, {
+                    service: this.constructor.name,
+                    id: 'Main'
+                });
+            } else if (conn.connector === 'SqliteConnector') {
                 const sqliteConnector = new SqliteConnector(conn.id, conn.data['databasePath'] as string);
                 this.connectors.set(conn.id, sqliteConnector);
                 await sqliteConnector.setup();
                 ApplicationLogger.info(`SqliteConnector configured.`, {service: this.constructor.name, id: 'Main'});
+            } else if (conn.connector === 'ApiConnector') {
+                const apiConnector = new ApiConnector(conn.data['url'] as string, conn.data['token'] as string);
+                this.connectors.set(conn.id, apiConnector);
+                await apiConnector.setup();
+                console.log(await apiConnector.loadAllUnits())
+                ApplicationLogger.info(`SqliteConnector configured.`, {service: this.constructor.name, id: 'Main'});
+            } else {
+                ApplicationLogger.warn(`Unknown connector type: ${conn.connector}`, {
+                    service: this.constructor.name,
+                    id: 'Main'
+                });
             }
         }
 
         for (const vehicle of this.config.vehicles) {
-            ApplicationLogger.info(`Setting up simulation for vehicle ID: ${vehicle.id}`, {service: this.constructor.name, id: 'Main'});
+            ApplicationLogger.info(`Setting up simulation for vehicle: ${vehicle.name}`, {
+                service: this.constructor.name,
+                id: 'Main'
+            });
             if (!vehicle.enabled) {
                 continue;
             }
-            const simVehicle = new Vehicle(vehicle.id as UUID);
+            if (!vehicle.id) {
+                ApplicationLogger.info("Vehicle ID not set, obtaining from api.", {
+                    service: this.constructor.name,
+                    id: 'Main'
+                });
+                for (const connector of this.connectors.values()) {
+                    const id = connector.lookUpEntityUUID(vehicle.name);
+                    if (id) {
+                        vehicle.id = id;
+                        ApplicationLogger.info(`Found vehicle ID ${id} for vehicle name: ${vehicle.name}`, {
+                            service: this.constructor.name,
+                            id: 'Main'
+                        });
+                        break;
+                    }
+                }
+                if (vehicle.id == null) {
+                    ApplicationLogger.error(`Could not find vehicle ID for vehicle name: ${vehicle.name}`, {
+                        service: this.constructor.name,
+                        id: 'Main'
+                    });
+                    for (const connector of this.connectors.values()) {
+                        if (connector instanceof ApiConnector) {
+                            const newUnit = await connector.saveUnit(new Unit({name: vehicle.name}));
+                            console.log("BWE", newUnit)
+                            if (newUnit) {
+                                vehicle.id = newUnit.getId() as string;
+                                ApplicationLogger.info(`Created new vehicle with ID ${vehicle.id} for vehicle name: ${vehicle.name}`, {
+                                    service: this.constructor.name,
+                                    id: 'Main'
+                                });
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if (!vehicle.name) {
+                continue;
+            }
+            const simVehicle = new Vehicle(vehicle.id as UUID, vehicle.name);
             let simulatorInstance: AbstractSimulator | null = null;
 
             if (vehicle.simulator === 'RouteSimulator') {
@@ -103,20 +171,29 @@ class GeoSimulator {
             }
 
             if (simulatorInstance == null) {
-                ApplicationLogger.error(`Simulator instance could not be created. Vehicle ID: ${vehicle.id}`, {service: this.constructor.name, id: 'Main'});
+                ApplicationLogger.error(`Simulator instance could not be created. Vehicle ID: ${vehicle.id}`, {
+                    service: this.constructor.name,
+                    id: 'Main'
+                });
                 continue
             }
             await simVehicle.setup(simulatorInstance);
-            this.vehicles.set(vehicle.id, simVehicle);
+            this.vehicles.set(vehicle.id as UUID, simVehicle);
 
             // Attach connectors to vehicle
             for (const connId of vehicle.connectors) {
                 const connector = this.connectors.get(connId);
                 if (connector) {
                     connector.attachEntity(simVehicle);
-                    ApplicationLogger.info(`Attached connector ${connId} to vehicle ${vehicle.id}`, {service: this.constructor.name, id: 'Main'});
+                    ApplicationLogger.info(`Attached connector ${connId} to vehicle ${vehicle.id}`, {
+                        service: this.constructor.name,
+                        id: 'Main'
+                    });
                 } else {
-                    ApplicationLogger.warn(`Connector ${connId} not found for vehicle ${vehicle.id}`, {service: this.constructor.name, id: 'Main'});
+                    ApplicationLogger.warn(`Connector ${connId} not found for vehicle ${vehicle.id}`, {
+                        service: this.constructor.name,
+                        id: 'Main'
+                    });
                 }
             }
         }

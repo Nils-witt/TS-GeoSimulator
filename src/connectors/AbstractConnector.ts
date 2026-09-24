@@ -21,7 +21,9 @@ export abstract class AbstractConnector {
     abstract setup(): Promise<void>;
 
     abstract onEntityPositionUpdate(event: EntityPositionUpdateEvent): Promise<void>;
+
     abstract onEntityStatusUpdate(event: EntityStatusEvent): Promise<void>;
+
     abstract onEntityRouteUpdate(event: EntityRouteEvent): Promise<void>;
 
     attachEntity(entity: AbstractEntity): void {
@@ -43,5 +45,14 @@ export abstract class AbstractConnector {
 
     public getId(): string {
         return this.id;
+    }
+
+    public lookUpEntityUUID(name: string): UUID | null {
+        for (const [uuid, entity] of this.entities) {
+            if (entity.getName() === name) {
+                return uuid;
+            }
+        }
+        return null;
     }
 }

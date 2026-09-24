@@ -41,7 +41,7 @@ export class WebSocketConnector extends AbstractConnector {
     }
 
     connect(): void {
-        ApplicationLogger.info(`Connecting to WebSocket at ${this.apiUrl.substring(0, 20)}...`, {
+        ApplicationLogger.info(`Connecting to WebSocket at ${this.apiUrl.substring(0, 75)}...`, {
             service: this.constructor.name,
             id: this.getId()
         });
@@ -123,7 +123,7 @@ export class WebSocketConnector extends AbstractConnector {
             }
         };
         this.socket.onerror = (error) => {
-            ApplicationLogger.error('WebSocket error:', {service: this.constructor.name, error: error});
+            ApplicationLogger.error('WebSocket error:' + error, {service: this.constructor.name, error: error, id: this.getId()});
             this.errorCount++;
 
         };

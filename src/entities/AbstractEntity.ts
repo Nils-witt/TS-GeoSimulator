@@ -36,11 +36,12 @@ export abstract class AbstractEntity {
     protected createdAt: Date;
     protected updatedAt: Date;
     protected position: LatLonPosition | TimedLatLonPosition | null = {latitude: 50.7373889, longitude: 7.0981944};
-
+    private name: string;
     private listeners = new Map<string, EventListener[]>();
 
-    constructor(id: UUID) {
+    constructor(id: UUID,name: string) {
         this.id = id;
+        this.name = name;
         this.createdAt = new Date();
         this.updatedAt = new Date();
     }
@@ -81,6 +82,10 @@ export abstract class AbstractEntity {
 
     getId(): UUID {
         return this.id;
+    }
+
+    getName(): string {
+        return this.name;
     }
 
 }
