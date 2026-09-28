@@ -10,13 +10,16 @@
  * DELETE /api/vehicles/:id           stop a vehicle and delete its config
  * GET    /api/vehicles/:id/history   stored positions, status changes and routes of one vehicle
  * DELETE /api/vehicles/:id/history   delete the stored history of one vehicle
+ * POST   /api/vehicles/:id/control   steer the running simulation, e.g. {"action": "skipWait"}
+ *                                    (actions: see SimulatorCommand; available ones are listed in details.controls)
  */
 
 import {randomUUID, UUID} from 'node:crypto';
 import {Router} from 'express';
 import {GeoSimulator} from '../../GeoSimulator';
 import {ConfigStore} from '../../config/ConfigStore';
-import {isUuid, SIMULATOR_TYPES, validateVehicle} from '../../config/validation';
+import {isUuid, SIMULATOR_TYPES, validateCommand, validateVehicle} from '../../config/validation';
+import {ControlError} from '../../simulator/AbstractSimulator';
 import {VehicleConfig} from '../../Types';
 
 export function vehiclesRouter(geoSimulator: GeoSimulator, configStore: ConfigStore): Router {
@@ -136,6 +139,28 @@ export function vehiclesRouter(geoSimulator: GeoSimulator, configStore: ConfigSt
             return;
         }
         await liveState.clearHistory(id);
+        res.status(204).end();
+    });
+
+    router.post('/:id/control', (req, res) => {
+        const command = validateCommand(req.body);
+        if (Array.isArray(command)) {
+            res.status(400).json({error: 'Invalid command', details: command});
+            return;
+        }
+        try {
+            if (!geoSimulator.controlVehicle(req.params.id, command)) {
+                res.status(404).json({error: 'Vehicle is not running'});
+                return;
+            }
+        } catch (e) {
+            if (e instanceof ControlError) {
+                res.status(409).json({error: e.message});
+                return;
+            }
+            throw e;
+        }
+        // The new state is pushed as a "details" message over the WebSocket.
         res.status(204).end();
     });
 

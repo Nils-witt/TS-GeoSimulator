@@ -5,7 +5,7 @@
  * Every validator returns a list of human-readable problems; an empty list means the input is valid.
  */
 
-import {LatLonPosition} from '../Types';
+import {LatLonPosition, SimulatorCommand} from '../Types';
 
 export const CONNECTOR_TYPES: Record<string, string[]> = {
     ApiConnector: ['url', 'token'],
@@ -113,4 +113,38 @@ export function validateVehicle(vehicle: unknown, connectorIds: Set<string>, whe
         }
     }
     return errors;
+}
+
+const MAX_EXTEND_SECONDS = 24 * 60 * 60;
+
+/** Checks an untrusted simulator command. Returns the command, or a list of problems. */
+export function validateCommand(command: unknown): SimulatorCommand | string[] {
+    if (!isObject(command)) {
+        return ['Command must be an object.'];
+    }
+    switch (command.action) {
+        case 'skipWait':
+        case 'pauseWait':
+        case 'resumeWait':
+            return {action: command.action};
+        case 'extendWait': {
+            const seconds = command.seconds;
+            if (typeof seconds !== 'number' || !(seconds > 0) || seconds > MAX_EXTEND_SECONDS) {
+                return [`"seconds" must be a number between 0 and ${MAX_EXTEND_SECONDS}.`];
+            }
+            return {action: 'extendWait', seconds};
+        }
+        case 'setNextDestination': {
+            const position = command.position;
+            if (position !== null && !isPosition(position)) {
+                return ['"position" must be a valid latitude/longitude or null.'];
+            }
+            return {
+                action: 'setNextDestination',
+                position: position && {latitude: position.latitude, longitude: position.longitude},
+            };
+        }
+        default:
+            return [`Unknown action "${String(command.action)}".`];
+    }
 }

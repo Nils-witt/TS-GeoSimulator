@@ -2,7 +2,7 @@ import {UUID} from 'crypto';
 import {AbstractEntity} from './AbstractEntity';
 import {ApplicationLogger} from '../utils/Logger';
 import {AbstractSimulator} from '../simulator/AbstractSimulator';
-import {LatLonPosition, SimulatorDetails} from '../Types';
+import {LatLonPosition, SimulatorCommand, SimulatorDetails} from '../Types';
 import {DetailsEvent, PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
 
 export class Vehicle extends AbstractEntity {
@@ -74,6 +74,11 @@ export class Vehicle extends AbstractEntity {
 
     public getSimulatorName(): string {
         return this.simulator.constructor.name;
+    }
+
+    /** Passes a command from the web UI to the simulator. Throws a ControlError if it cannot be applied. */
+    public control(command: SimulatorCommand): void {
+        this.simulator.control(command);
     }
 
     public getDetails(): SimulatorDetails | null {

@@ -217,6 +217,10 @@
                 background: var(--accent);
                 transition: width 1s linear;
             }
+            .toolbar.controls {
+                flex-wrap: wrap;
+                gap: 6px;
+            }
             .place-link {
                 color: var(--accent);
                 cursor: pointer;
@@ -544,6 +548,7 @@
                 }
             }
 
+            const PLACE_COLORS = {Emergency: '#dc2626', 'Next destination': '#9333ea'};
             function updatePlaces() {
                 placesLayer.clearLayers();
                 const places = vehicles.get(selectedId)?.details?.places ?? {};
@@ -551,7 +556,7 @@
                     L.circleMarker([p.latitude, p.longitude], {
                         radius: 7,
                         weight: 3,
-                        color: label === 'Emergency' ? '#dc2626' : '#2563eb',
+                        color: PLACE_COLORS[label] ?? '#2563eb',
                         fillColor: '#fff',
                         fillOpacity: 1,
                     })
@@ -588,7 +593,7 @@
                                 <div class="v-sub">${
                                     // The badge already shows the status; the phase is more specific.
                                     v.details
-                                        ? `${esc(v.details.phase)}${v.details.phaseEndsAt ? ` · ${countdown(v.details.phaseEndsAt)}` : ''}`
+                                        ? `${esc(v.details.phase)}${v.details.paused ? ' · paused' : v.details.phaseEndsAt ? ` · ${countdown(v.details.phaseEndsAt)}` : ''}`
                                         : `${esc(info.label)} · ${esc(v.simulator ?? '')}`
                                 }</div>
                             </span>
@@ -662,7 +667,7 @@
                         <dt>Route</dt><dd>${v.route?.length ?? 0} points · ${remaining}</dd>
                         <dt>Updated</dt><dd>${fmtDateTime(v.updatedAt)}</dd>
                     </dl>
-                    ${renderSimulation(v.details)}
+                    ${renderSimulation(v)}
                     <div class="toolbar">
                         <button class="btn" data-action="clear-history" ${history ? '' : 'disabled'}>Clear history</button>
                     </div>
@@ -676,7 +681,8 @@
                     </div>
                     ${body}`;
             }
-            function renderSimulation(d) {
+            function renderSimulation(v) {
+                const d = v.details;
                 if (!d) return '';
                 const {phase, phaseStartedAt: from, phaseEndsAt: to} = d;
                 const pct = to ? Math.min(100, ((Date.now() - from) / (to - from)) * 100) : 0;
@@ -695,10 +701,73 @@
                         <dt>Phase</dt><dd>${esc(phase)}</dd>
                         <dt>Since</dt><dd>${fmtTime(from)} · <span data-elapsed="${from}">${fmtDuration(Date.now() - from)}</span></dd>
                         ${to ? `<dt>Ends</dt><dd>${fmtTime(to)} · ${countdown(to)}</dd>` : ''}
+                        ${d.paused ? `<dt>Ends</dt><dd>Paused · ${fmtDuration(d.remainingMs)} left</dd>` : ''}
                         ${to ? `<div class="phase-bar"><div data-progress-start="${from}" data-progress-end="${to}" style="width:${pct}%"></div></div>` : ''}
                         ${places}
                         ${stats}
-                    </dl>`;
+                    </dl>
+                    ${renderControls(v)}`;
+            }
+
+            function renderControls(v) {
+                const can = (action) => v.details.controls.includes(action);
+                const button = (label, command, title = '') =>
+                    `<button class="btn" data-control='${esc(JSON.stringify(command))}' title="${esc(title)}">${label}</button>`;
+                const buttons = [];
+                if (can('skipWait')) buttons.push(button('Skip wait', {action: 'skipWait'}, 'End the wait now'));
+                if (can('extendWait')) {
+                    buttons.push(button('+1 min', {action: 'extendWait', seconds: 60}, 'Extend the wait by 1 minute'));
+                    buttons.push(
+                        button('+5 min', {action: 'extendWait', seconds: 300}, 'Extend the wait by 5 minutes'),
+                    );
+                }
+                if (can('pauseWait')) buttons.push(button('Pause', {action: 'pauseWait'}, 'Hold the countdown'));
+                if (can('resumeWait')) buttons.push(button('Resume', {action: 'resumeWait'}, 'Continue the countdown'));
+                if (can('setNextDestination')) {
+                    const picking = destinationPick === v.id;
+                    buttons.push(
+                        `<button class="btn ${picking ? 'primary' : ''}" data-action="pick-destination" title="Click on the map to choose where the vehicle goes next">${
+                            picking ? 'Click on the map… (Esc)' : 'Set next destination'
+                        }</button>`,
+                    );
+                    if (v.details.places['Next destination']) {
+                        buttons.push(button('Clear destination', {action: 'setNextDestination', position: null}));
+                    }
+                }
+                return buttons.length ? `<div class="toolbar controls">${buttons.join('')}</div>` : '';
+            }
+
+            let destinationPick = null; // id of the vehicle whose next destination is picked on the map
+            function setDestinationPick(id) {
+                destinationPick = id;
+                $('map').classList.toggle('picking', !!id);
+                renderDetail();
+            }
+            map.on('click', (e) => {
+                if (!destinationPick) return;
+                const id = destinationPick;
+                setDestinationPick(null);
+                const position = {latitude: e.latlng.lat, longitude: e.latlng.lng};
+                sendControl(id, {action: 'setNextDestination', position});
+            });
+            document.addEventListener(
+                'keydown',
+                (e) => e.key === 'Escape' && destinationPick && setDestinationPick(null),
+            );
+
+            async function sendControl(id, command) {
+                const res = await fetch(`api/vehicles/${encodeURIComponent(id)}/control`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(command),
+                }).catch(() => null);
+                if (!res) {
+                    alert('Could not reach the simulator.');
+                } else if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    alert(data.error ?? `Request failed (${res.status})`);
+                }
+                // On success the new state arrives as a "details" message.
             }
 
             function tick() {
@@ -718,6 +787,15 @@
             setInterval(tick, 1000);
 
             $('detail').addEventListener('click', (e) => {
+                const control = e.target.closest('button[data-control]');
+                if (control) {
+                    sendControl(selectedId, JSON.parse(control.dataset.control));
+                    return;
+                }
+                if (e.target.closest('button[data-action="pick-destination"]')) {
+                    setDestinationPick(destinationPick === selectedId ? null : selectedId);
+                    return;
+                }
                 const place = e.target.closest('.place-link');
                 if (place) {
                     map.panTo([Number(place.dataset.lat), Number(place.dataset.lon)]);
@@ -755,6 +833,7 @@
                 if (pickTarget) return;
                 const previous = selectedId;
                 selectedId = id;
+                if (destinationPick && destinationPick !== id) setDestinationPick(null);
                 history = null;
                 shownRouteIndex = null;
                 for (const pid of [previous, id]) if (vehicles.has(pid)) updateLayers(vehicles.get(pid));

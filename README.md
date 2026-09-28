@@ -67,6 +67,10 @@ API
 - `POST /api/vehicles`, `GET|PUT|DELETE /api/vehicles/:id`: create, read (live state and config), replace or
   delete a vehicle. Creating or replacing an enabled vehicle (re)starts it
 - `GET|DELETE /api/vehicles/:id/history`: stored positions, status changes and routes
+- `POST /api/vehicles/:id/control`: steer a running `EmergencyDispatchSimulator` or `RandomRouteSimulator`.
+  Body `{"action": ...}` with `skipWait`, `extendWait` (plus `"seconds"`), `pauseWait`, `resumeWait` or
+  `setNextDestination` (plus `"position": {"latitude", "longitude"}`, or `null` for random again). The actions
+  available right now are listed in the vehicle's `details.controls`; others are rejected with `409`
 - `GET|POST /api/connectors`, `GET|PUT|DELETE /api/connectors/:id`: list, add, read, replace or delete a
   connector. Connectors are identified by a UUID `id` that the server assigns on `POST`; vehicles reference
   connectors by it, and the editable `name` is only a label. A connector that cannot be set up is rejected with

@@ -1,8 +1,11 @@
-import {LatLonPosition, SimulatorDetails} from '../Types';
+import {LatLonPosition, SimulatorCommand, SimulatorDetails} from '../Types';
 import {UUID} from 'crypto';
 import {randomUUID} from 'node:crypto';
 import {Emitter} from '../utils/Emitter';
 import {DetailsEvent, PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
+
+/** A control command that is valid but cannot be applied in the simulator's current state. */
+export class ControlError extends Error {}
 
 export abstract class AbstractSimulator extends Emitter {
     private position: LatLonPosition | null = null;
@@ -47,6 +50,11 @@ export abstract class AbstractSimulator extends Emitter {
 
     public getDetails(): SimulatorDetails | null {
         return this.details;
+    }
+
+    /** Applies a command from the web UI. Throws a ControlError if it cannot be applied. */
+    public control(_command: SimulatorCommand): void {
+        throw new ControlError(`${this.constructor.name} cannot be controlled.`);
     }
 
     protected setDetails(details: SimulatorDetails): void {

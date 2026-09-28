@@ -6,7 +6,7 @@
  */
 
 import {Database} from 'sqlite';
-import {ConfigType, VehicleConfig} from './Types';
+import {ConfigType, SimulatorCommand, VehicleConfig} from './Types';
 import {ApplicationLogger} from './utils/Logger';
 import {Vehicle} from './entities/Vehicle';
 import {AbstractConnector} from './connectors/AbstractConnector';
@@ -125,6 +125,19 @@ export class GeoSimulator {
         this.liveState.detachEntity(id);
         this.vehicles.delete(id);
         this.liveState.notifyReloaded();
+        return true;
+    }
+
+    /**
+     * Passes a command to a running vehicle's simulator. Returns false if the vehicle is not running;
+     * throws a ControlError if the command cannot be applied right now.
+     */
+    controlVehicle(id: string, command: SimulatorCommand): boolean {
+        const vehicle = this.vehicles.get(id);
+        if (!vehicle) {
+            return false;
+        }
+        vehicle.control(command);
         return true;
     }
 

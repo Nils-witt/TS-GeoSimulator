@@ -192,6 +192,9 @@ export class RouteSimulator extends AbstractSimulator {
             phaseEndsAt,
             places: {Destination: this.endPos},
             stats: {Speed: `${Math.round(this.options.speedMps * 3.6)} km/h`},
+            paused: false,
+            remainingMs: null,
+            controls: [],
         });
     }
 
