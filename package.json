@@ -5,24 +5,24 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
-    "dev:watch": "nodemon --watch src src/index.ts",
+    "dev": "tsx src/index.ts",
+    "dev:watch": "nodemon --watch src --exec tsx src/index.ts",
     "lint": "oxlint",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
   "devDependencies": {
-    "@types/node": "^25.2.3",
+    "@types/node": "^26.6.3",
     "oxlint": "^1.86.0",
     "prettier": "3.9.9",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   },
   "dependencies": {
-    "dotenv": "^17.3.1",
-    "nodemon": "^3.1.11",
+    "dotenv": "^18.0.4",
+    "nodemon": "^3.1.14",
     "sqlite": "^5.1.1",
-    "sqlite3": "^5.1.7",
+    "sqlite3": "^6.0.1",
     "winston": "^3.19.0"
   }
 }
