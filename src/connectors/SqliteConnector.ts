@@ -3,9 +3,7 @@ import sqlite3 from 'sqlite3';
 import {Database, open} from 'sqlite';
 import {LatLonPosition, TimedLatLonPosition} from '../Types';
 import {ApplicationLogger} from '../utils/Logger';
-import {EntityPositionUpdateEvent} from '../events/EntityPositionUpdateEvent';
-import {EntityStatusEvent} from '../events/EntityStatusEvent';
-import {EntityRouteEvent} from '../events/EntityRouteEvent';
+import {PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
 
 export interface PositionRecord {
     latitude: number | null;
@@ -39,9 +37,9 @@ export class SqliteConnector extends AbstractConnector {
         }
     }
 
-    async onEntityPositionUpdate(event: EntityPositionUpdateEvent): Promise<void> {
-        if (this.db && event.getEntity()) {
-            const entity = event.getEntity();
+    async onEntityPositionUpdate(event: PositionUpdateEvent): Promise<void> {
+        if (this.db && event.getSource()) {
+            const entity = event.getSource();
             const position = event.getPosition();
             if (position) {
                 let timestamp = Date.now();
@@ -59,11 +57,11 @@ export class SqliteConnector extends AbstractConnector {
         }
     }
 
-    async onEntityStatusUpdate(event: EntityStatusEvent): Promise<void> {
-        if (this.db && event.getEntity()) {
-            const entity = event.getEntity();
+    async onEntityStatusUpdate(event: StatusEvent): Promise<void> {
+        if (this.db && event.getSource()) {
+            const entity = event.getSource();
             const status = event.getStatus();
-            if (status) {
+            if (status != null) {
                 const timestamp = Date.now();
                 await this.db.run(
                     'INSERT INTO unit_status (entity_id, status, timestamp) VALUES (?,  ?, ?)',
@@ -75,9 +73,9 @@ export class SqliteConnector extends AbstractConnector {
         }
     }
 
-    async onEntityRouteUpdate(event: EntityRouteEvent): Promise<void> {
-        if (this.db && event.getEntity()) {
-            const entity = event.getEntity();
+    async onEntityRouteUpdate(event: RouteEvent): Promise<void> {
+        if (this.db && event.getSource()) {
+            const entity = event.getSource();
             const route = event.getRoute();
             const timestamp = Date.now();
             await this.db.run(
@@ -176,5 +174,15 @@ export class SqliteConnector extends AbstractConnector {
             limit,
         );
         return rows.reverse().map((r) => ({route: JSON.parse(r.route) as LatLonPosition[], timestamp: r.timestamp}));
+    }
+
+    /** Deletes all stored positions, status changes and routes of an entity. */
+    async clearHistory(entityId: string): Promise<void> {
+        if (!this.db) {
+            return;
+        }
+        for (const table of ['positions', 'unit_status', 'unit_routes']) {
+            await this.db.run(`DELETE FROM ${table} WHERE entity_id = ?`, entityId);
+        }
     }
 }

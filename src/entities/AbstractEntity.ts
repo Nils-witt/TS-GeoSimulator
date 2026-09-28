@@ -1,64 +1,22 @@
 import {UUID} from 'crypto';
-import {EventListener, LatLonPosition, TimedLatLonPosition} from '../Types';
-import {AbstractSimulator} from '../simulator/AbstractSimulator';
-import {EntityPositionUpdateEvent} from '../events/EntityPositionUpdateEvent';
+import {LatLonPosition, TimedLatLonPosition} from '../Types';
+import {Emitter} from '../utils/Emitter';
+import {DEFAULT_POSITION} from '../utils/Geo';
+import {PositionUpdateEvent} from '../events/Events';
 
-export function offsetPosition(
-    latLon: LatLonPosition,
-    distanceMeters: number,
-    bearingDeg: number,
-    earthRadiusMeters = 6371000,
-): LatLonPosition {
-    const toRad = (d: number) => (d * Math.PI) / 180;
-    const toDeg = (r: number) => (r * 180) / Math.PI;
-
-    const lat1 = toRad(latLon.latitude);
-    const lon1 = toRad(latLon.longitude);
-    const bearing = toRad(bearingDeg);
-    const angularDist = distanceMeters / earthRadiusMeters;
-
-    const sinLat2 = Math.sin(lat1) * Math.cos(angularDist) + Math.cos(lat1) * Math.sin(angularDist) * Math.cos(bearing);
-    const lat2 = Math.asin(Math.min(1, Math.max(-1, sinLat2)));
-
-    const y = Math.sin(bearing) * Math.sin(angularDist) * Math.cos(lat1);
-    const x = Math.cos(angularDist) - Math.sin(lat1) * Math.sin(lat2);
-    let lon2 = lon1 + Math.atan2(y, x);
-
-    // normalize lon to \(-180, 180]\)
-    lon2 = ((lon2 + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
-
-    return {latitude: toDeg(lat2), longitude: toDeg(lon2)};
-}
-
-export abstract class AbstractEntity {
+export abstract class AbstractEntity extends Emitter {
     protected id: UUID;
     protected createdAt: Date;
     protected updatedAt: Date;
-    protected position: LatLonPosition | TimedLatLonPosition | null = {latitude: 50.7373889, longitude: 7.0981944};
+    protected position: LatLonPosition | TimedLatLonPosition | null = DEFAULT_POSITION;
     private name: string;
-    private listeners = new Map<string, EventListener[]>();
 
     constructor(id: UUID, name: string) {
+        super();
         this.id = id;
         this.name = name;
         this.createdAt = new Date();
         this.updatedAt = new Date();
-    }
-
-    on(event: string, listener: EventListener): void {
-        if (!this.listeners.has(event)) {
-            this.listeners.set(event, []);
-        }
-        this.listeners.get(event)!.push(listener);
-    }
-
-    emit(event: Event): void {
-        const eventListeners = this.listeners.get(event.type);
-        if (eventListeners) {
-            for (const listener of eventListeners) {
-                listener(event);
-            }
-        }
     }
 
     abstract getInfo(): string;
@@ -67,11 +25,11 @@ export abstract class AbstractEntity {
 
     abstract stop(): void;
 
-    abstract setup(simulator: AbstractSimulator): Promise<void>;
+    abstract setup(): Promise<void>;
 
     setPosition(position: LatLonPosition | TimedLatLonPosition | null): void {
         this.position = position;
-        this.emit(new EntityPositionUpdateEvent(this, position));
+        this.emit(new PositionUpdateEvent(this, position));
     }
 
     getPosition(): LatLonPosition | null {

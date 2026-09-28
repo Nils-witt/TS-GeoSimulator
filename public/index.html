@@ -348,7 +348,21 @@
                 font-size: 12px;
                 color: var(--muted);
             }
-            #config-errors ul {
+            .card-actions {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+                font-size: 12px;
+                color: var(--muted);
+            }
+            .card-actions span {
+                flex: 1;
+            }
+            .card-footer:empty {
+                display: none;
+            }
+            #config-errors ul,
+            ul.card-errors {
                 margin: 0;
                 padding-left: 18px;
                 max-height: 120px;
@@ -397,8 +411,7 @@
                         <div id="config-errors"></div>
                         <div class="actions">
                             <span id="config-state"></span>
-                            <button class="btn" id="config-discard" disabled>Discard</button>
-                            <button class="btn primary" id="config-save" disabled>Save &amp; apply</button>
+                            <button class="btn" id="config-discard" disabled>Discard all changes</button>
                         </div>
                     </div>
                 </div>
@@ -604,6 +617,9 @@
                         <dt>Route</dt><dd>${v.route?.length ?? 0} points · ${remaining}</dd>
                         <dt>Updated</dt><dd>${fmtDateTime(v.updatedAt)}</dd>
                     </dl>
+                    <div class="toolbar">
+                        <button class="btn" data-action="clear-history" ${history ? '' : 'disabled'}>Clear history</button>
+                    </div>
                     <div class="tabs">
                         ${['status', 'routes', 'positions']
                             .map(
@@ -619,6 +635,10 @@
                 if (tab) {
                     activeTab = tab.dataset.tab;
                     renderDetail();
+                    return;
+                }
+                if (e.target.closest('button[data-action="clear-history"]')) {
+                    clearHistory(selectedId);
                     return;
                 }
                 const row = e.target.closest('tr[data-route]');
@@ -654,6 +674,23 @@
                 const res = await fetch(`api/vehicles/${encodeURIComponent(id)}/history`);
                 if (selectedId !== id || !res.ok) return;
                 history = await res.json();
+                renderDetail();
+                updateOverlays();
+            }
+
+            async function clearHistory(id) {
+                const v = vehicles.get(id);
+                if (!v || !confirm(`Delete all stored positions, status changes and routes of "${v.name}"?`)) return;
+                const res = await fetch(`api/vehicles/${encodeURIComponent(id)}/history`, {method: 'DELETE'}).catch(
+                    () => null,
+                );
+                if (!res?.ok) {
+                    alert('Could not clear the history.');
+                    return;
+                }
+                if (selectedId !== id) return;
+                history = {positions: [], statuses: [], routes: []};
+                shownRouteIndex = null;
                 renderDetail();
                 updateOverlays();
             }
@@ -724,25 +761,38 @@
                 }
             }
 
+            let reconnectDelay = 1000;
             function connect() {
-                const es = new EventSource('api/events');
-                es.onopen = () => {
+                // Resolved relative to the page, like the api/... fetches.
+                const url = new URL('api/ws', location.href);
+                url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const ws = new WebSocket(url);
+                ws.onopen = () => {
+                    reconnectDelay = 1000;
                     $('conn').className = 'conn live';
                     $('conn-text').textContent = 'live';
                     loadVehicles().then(() => selectedId && select(selectedId));
                 };
-                es.onerror = () => {
+                ws.onclose = () => {
                     $('conn').className = 'conn down';
                     $('conn-text').textContent = 'reconnecting…';
+                    setTimeout(connect, reconnectDelay);
+                    reconnectDelay = Math.min(reconnectDelay * 2, 15000);
                 };
-                for (const type of ['position', 'status', 'route']) {
-                    es.addEventListener(type, (e) => applyEvent(type, JSON.parse(e.data)));
-                }
-                es.addEventListener('reload', () => {
-                    loadVehicles();
-                    // Pick up changes made in another tab, unless there are local edits.
-                    if (draft && !dirty && !saving) loadConfig();
-                });
+                ws.onmessage = (e) => {
+                    const {type, data} = JSON.parse(e.data);
+                    if (type === 'reload') {
+                        loadVehicles();
+                        // Pick up changes made in another tab; cards with local edits are kept.
+                        if (draft && !saving)
+                            refreshConfig().then(() => {
+                                renderConfig();
+                                updateConfigState();
+                            });
+                    } else {
+                        applyEvent(type, data);
+                    }
+                };
             }
 
             // --- Config ---
@@ -770,8 +820,14 @@
 
             let view = 'live';
             let configMeta = null; // {connectorTypes, simulatorTypes}: required fields per type
-            let draft = null;
-            let dirty = false;
+            // Every connector and vehicle card is saved on its own (POST/PUT/DELETE, see ENDPOINT).
+            const KINDS = ['connectors', 'vehicles'];
+            const KEY = {connectors: 'id', vehicles: 'id'};
+            const LABEL = {connectors: 'connector', vehicles: 'vehicle'};
+            let saved = null; // config as stored on the server
+            let draft = null; // edited copy of `saved`
+            const storedKeys = new WeakMap(); // draft item -> ID it is stored under; missing: not saved yet
+            const itemErrors = new WeakMap(); // draft item -> errors of its last save
             let saving = false;
             let pickTarget = null; // {index, field}
             const configLayer = L.layerGroup();
@@ -789,40 +845,206 @@
                 else target[keys.at(-1)] = value;
             }
 
+            // JSON with sorted keys, so that edits which only change the key order do not count as changes.
+            const canonical = (value) =>
+                JSON.stringify(value, (_k, v) =>
+                    v && typeof v === 'object' && !Array.isArray(v)
+                        ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
+                        : v,
+                );
+            function savedItem(kind, item) {
+                const key = storedKeys.get(item);
+                return key == null ? undefined : saved[kind].find((s) => s[KEY[kind]] === key);
+            }
+            function isChanged(kind, item) {
+                const stored = savedItem(kind, item);
+                return !stored || canonical(stored) !== canonical(item);
+            }
+            const unsavedCount = () =>
+                draft ? KINDS.reduce((n, kind) => n + draft[kind].filter((i) => isChanged(kind, i)).length, 0) : 0;
+
             function updateConfigState(message) {
+                const unsaved = unsavedCount();
                 $('config-state').textContent =
                     message ??
                     (saving
                         ? 'Applying…'
                         : pickTarget
                           ? 'Click on the map to set the position (Esc cancels).'
-                          : dirty
-                            ? 'Unsaved changes'
+                          : unsaved
+                            ? `${unsaved} unsaved ${unsaved === 1 ? 'card' : 'cards'}`
                             : '');
-                $('config-save').disabled = saving || !dirty;
-                $('config-discard').disabled = saving || !dirty;
+                $('config-discard').disabled = saving || !unsaved;
             }
-            function setDirty(value) {
-                dirty = value;
-                updateConfigState();
-            }
+            const errorList = (errors, cls = '') =>
+                errors.length ? `<ul class="${cls}">${errors.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>` : '';
             function showConfigErrors(errors) {
-                $('config-errors').innerHTML = errors.length
-                    ? `<ul>${errors.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>`
-                    : '';
+                $('config-errors').innerHTML = errorList(errors);
             }
 
-            async function loadConfig() {
-                const res = await fetch('api/config');
-                if (!res.ok) {
+            /**
+             * Fetches the stored connectors and vehicles plus the required fields per type.
+             * Returns null (after showing an error) if anything cannot be loaded.
+             */
+            async function fetchStored() {
+                const results = await Promise.all(
+                    ['api/connectors', 'api/connectors/types', 'api/vehicles/configs', 'api/vehicles/types'].map((url) =>
+                        fetch(url)
+                            .then((res) => (res.ok ? res.json() : null))
+                            .catch(() => null),
+                    ),
+                );
+                if (results.includes(null)) {
                     showConfigErrors(['Could not load the config.']);
+                    return null;
+                }
+                const [connectors, connectorTypes, vehicles, simulatorTypes] = results;
+                return {meta: {connectorTypes, simulatorTypes}, config: {connectors, vehicles}};
+            }
+
+            /** Replaces all local edits with the stored config. */
+            async function loadConfig() {
+                const stored = await fetchStored();
+                if (!stored) return;
+                configMeta = stored.meta;
+                saved = stored.config;
+                draft = {connectors: [], vehicles: []};
+                for (const kind of KINDS) {
+                    for (const stored of saved[kind]) {
+                        const item = structuredClone(stored);
+                        storedKeys.set(item, stored[KEY[kind]]);
+                        draft[kind].push(item);
+                    }
+                }
+                renderConfig();
+                updateConfigState();
+            }
+
+            /**
+             * Picks up the stored config but keeps cards with unsaved edits, except `clean` (the card that was just
+             * saved). Edited cards that were deleted on the server become unsaved new cards.
+             */
+            async function refreshConfig(clean) {
+                const stored = await fetchStored();
+                if (!stored) return;
+                const fresh = stored.config;
+                const next = {connectors: [], vehicles: []};
+                for (const kind of KINDS) {
+                    const edited = draft[kind].filter((i) => i !== clean && isChanged(kind, i));
+                    const kept = new Set();
+                    for (const stored of fresh[kind]) {
+                        const key = stored[KEY[kind]];
+                        const local = edited.find((i) => storedKeys.get(i) === key);
+                        const item = local ?? structuredClone(stored);
+                        storedKeys.set(item, key);
+                        kept.add(item);
+                        next[kind].push(item);
+                    }
+                    for (const item of edited) {
+                        if (kept.has(item)) continue;
+                        storedKeys.delete(item);
+                        next[kind].push(item);
+                    }
+                }
+                saved = fresh;
+                draft = next;
+                cancelPick();
+            }
+
+            /** Removes a deleted connector from the vehicle cards, like the server does. */
+            function removeConnectorReferences(id) {
+                for (const v of draft.vehicles) v.connectors = v.connectors.filter((c) => c !== id);
+            }
+
+            const ENDPOINT = {connectors: 'api/connectors', vehicles: 'api/vehicles'};
+
+            /** Sends one change; `key` is the stored ID of the item (omitted for POST). */
+            async function sendConfig(method, kind, key, body) {
+                const url = key == null ? ENDPOINT[kind] : `${ENDPOINT[kind]}/${encodeURIComponent(key)}`;
+                const res = await fetch(url, {
+                    method,
+                    headers: body ? {'Content-Type': 'application/json'} : {},
+                    body: body ? JSON.stringify(body) : undefined,
+                });
+                const data = res.status === 204 ? {} : await res.json().catch(() => ({}));
+                // The card already says which item it is, so drop the "Connector:"/"Vehicle:" prefix.
+                const errors = res.ok
+                    ? []
+                    : (data.details ?? data.errors ?? [data.error ?? `Request failed (${res.status})`]).map((e) =>
+                          e.replace(/^(Connector|Vehicle)( \d+)?: /, ''),
+                      );
+                return {stored: res.ok, errors, entity: res.ok ? data : undefined};
+            }
+
+            /** Runs one change against the server, then shows its errors on `item` and picks up the stored config. */
+            async function applyChange(item, change) {
+                cancelPick();
+                saving = true;
+                itemErrors.delete(item);
+                showConfigErrors([]);
+                renderConfig();
+                updateConfigState();
+                let result;
+                try {
+                    result = await change();
+                } catch (err) {
+                    result = {stored: false, errors: [`Could not reach the simulator: ${err.message}`]};
+                }
+                if (result.stored) await refreshConfig(item);
+                saving = false;
+                if (result.errors.length) {
+                    if (KINDS.some((k) => draft[k].includes(item))) itemErrors.set(item, result.errors);
+                    else showConfigErrors(result.errors);
+                }
+                renderConfig();
+                updateConfigState(result.stored && !result.errors.length ? 'Saved and applied.' : undefined);
+            }
+
+            function saveItem(kind, item) {
+                const key = storedKeys.get(item);
+                return applyChange(item, async () => {
+                    const result =
+                        key == null
+                            ? await sendConfig('POST', kind, null, item)
+                            : await sendConfig('PUT', kind, key, item);
+                    // New items get their UUID from the server unless one was entered.
+                    if (result.stored) storedKeys.set(item, result.entity?.id ?? item.id);
+                    return result;
+                });
+            }
+
+            function deleteItem(kind, item) {
+                const key = storedKeys.get(item);
+                const remove = () => draft[kind].splice(draft[kind].indexOf(item), 1);
+                if (key == null) {
+                    remove();
+                    renderConfig();
+                    updateConfigState();
                     return;
                 }
-                const body = await res.json();
-                configMeta = {connectorTypes: body.connectorTypes, simulatorTypes: body.simulatorTypes};
-                draft = body.config;
-                setDirty(false);
+                const note =
+                    kind === 'connectors'
+                        ? ' It is disconnected and removed from all vehicles.'
+                        : ' Its simulation is stopped.';
+                const name = savedItem(kind, item).name;
+                if (!confirm(`Delete ${LABEL[kind]} "${name}"?${note}`)) return;
+                return applyChange(item, async () => {
+                    const result = await sendConfig('DELETE', kind, key);
+                    if (result.stored) {
+                        remove();
+                        if (kind === 'connectors') removeConnectorReferences(key);
+                    }
+                    return result;
+                });
+            }
+
+            function revertItem(kind, item) {
+                const copy = structuredClone(savedItem(kind, item));
+                storedKeys.set(copy, storedKeys.get(item));
+                draft[kind][draft[kind].indexOf(item)] = copy;
+                cancelPick();
                 renderConfig();
+                updateConfigState();
             }
 
             function fillSimulatorDefaults(v) {
@@ -848,16 +1070,29 @@
             const speedLabel = (speed) =>
                 `Speed (m/s)${Number.isFinite(speed) ? ` · ${Math.round(speed * 3.6)} km/h` : ''}`;
 
+            function renderCardFooter(kind, item) {
+                const i = draft[kind].indexOf(item);
+                const isNew = !storedKeys.has(item);
+                const disabled = saving ? 'disabled' : '';
+                const actions = isChanged(kind, item)
+                    ? `<div class="card-actions"><span>${isNew ? 'Not saved yet' : 'Unsaved changes'}</span>
+                        ${isNew ? '' : `<button class="btn" data-action="revert" data-kind="${kind}" data-index="${i}" ${disabled}>Revert</button>`}
+                        <button class="btn primary" data-action="save" data-kind="${kind}" data-index="${i}" ${disabled}>Save &amp; apply</button></div>`
+                    : '';
+                return errorList(itemErrors.get(item) ?? [], 'card-errors') + actions;
+            }
+
             function renderConnector(c, i) {
                 const fields = configMeta.connectorTypes[c.connector] ?? [];
                 const typeOptions = options(Object.keys(configMeta.connectorTypes), c.connector);
-                return `<div class="card">
+                return `<div class="card" data-kind="connectors" data-index="${i}">
                     <div class="row">
-                        <label class="field grow"><span>ID</span>
-                            <input data-path="connectors.${i}.id" data-rename="${i}" value="${esc(c.id)}"></label>
+                        <label class="field grow" title="${c.id ? `ID ${esc(c.id)}` : 'Gets an ID when saved'}"><span>Name</span>
+                            <input data-path="connectors.${i}.name" value="${esc(c.name ?? '')}"></label>
                         <label class="field grow"><span>Type</span>
                             <select data-path="connectors.${i}.connector" data-rerender>${typeOptions}</select></label>
-                        <button class="icon" data-action="remove-connector" data-index="${i}" title="Remove connector">×</button>
+                        <button class="icon" data-action="delete" data-kind="connectors" data-index="${i}" title="Delete connector"
+                            ${saving ? 'disabled' : ''}>×</button>
                     </div>
                     ${fields
                         .map(
@@ -866,12 +1101,14 @@
                                     data-path="connectors.${i}.data.${f}" value="${esc(c.data?.[f] ?? '')}"></label>`,
                         )
                         .join('')}
+                    <div class="card-footer">${renderCardFooter('connectors', c)}</div>
                 </div>`;
             }
 
             function renderVehicle(v, i) {
                 const coords = configMeta.simulatorTypes[v.simulator] ?? [];
-                const connIds = draft.connectors.map((c) => c.id).filter(Boolean);
+                // Only stored connectors can be referenced; the server rejects the others.
+                const stored = saved.connectors;
                 const simulatorOptions = options(Object.keys(configMeta.simulatorTypes), v.simulator);
                 const movementOptions = options(MOVEMENT_TYPES, v.data?.movementType ?? 'driving');
                 const coordRows = coords
@@ -887,21 +1124,23 @@
                                 data-field="${f}" title="Pick on map">⌖</button></div>`;
                     })
                     .join('');
-                const connectorChecks = connIds.length
-                    ? connIds
+                const connectorChecks = stored.length
+                    ? stored
                           .map(
-                              (id) => `<label><input type="checkbox" data-vehicle-connector="${i}" value="${esc(id)}"
-                                  ${v.connectors?.includes(id) ? 'checked' : ''}> ${esc(id)}</label>`,
+                              (c) => `<label><input type="checkbox" data-vehicle-connector="${i}" value="${esc(c.id)}"
+                                  ${v.connectors?.includes(c.id) ? 'checked' : ''}> ${esc(c.name)}</label>`,
                           )
                           .join('')
                     : '<span style="color: var(--muted)">No connectors defined</span>';
-                return `<div class="card ${v.enabled ? '' : 'disabled'}" style="--card-color: ${cardColor(i)}">
+                return `<div class="card ${v.enabled ? '' : 'disabled'}" data-kind="vehicles" data-index="${i}"
+                    style="--card-color: ${cardColor(i)}">
                     <div class="row">
                         <label class="field" title="Enabled"><span>On</span>
                             <input type="checkbox" data-path="vehicles.${i}.enabled" data-kind="bool" ${v.enabled ? 'checked' : ''}></label>
                         <label class="field grow"><span>Name</span>
                             <input data-path="vehicles.${i}.name" value="${esc(v.name ?? '')}"></label>
-                        <button class="icon" data-action="remove-vehicle" data-index="${i}" title="Remove vehicle">×</button>
+                        <button class="icon" data-action="delete" data-kind="vehicles" data-index="${i}" title="Delete vehicle"
+                            ${saving ? 'disabled' : ''}>×</button>
                     </div>
                     <label class="field"><span>Simulator</span>
                         <select data-path="vehicles.${i}.simulator" data-rerender>${simulatorOptions}</select></label>
@@ -913,9 +1152,11 @@
                             <select data-path="vehicles.${i}.data.movementType">${movementOptions}</select></label>
                     </div>
                     ${coordRows}
-                    <label class="field"><span>Unit ID (empty: look up by name or create)</span>
-                        <input data-path="vehicles.${i}.id" data-kind="optional" value="${esc(v.id ?? '')}"></label>
+                    <label class="field"><span>Unit ID${storedKeys.has(v) ? '' : ' (UUID, empty: generated when saved)'}</span>
+                        <input data-path="vehicles.${i}.id" data-kind="optional" value="${esc(v.id ?? '')}"
+                            ${storedKeys.has(v) ? 'readonly' : ''}></label>
                     <div class="field"><span>Connectors</span><div class="checks">${connectorChecks}</div></div>
+                    <div class="card-footer">${renderCardFooter('vehicles', v)}</div>
                 </div>`;
             }
 
@@ -969,6 +1210,16 @@
                 });
             }
 
+            /** Re-renders the save controls of the card containing `el`, without touching the focused input. */
+            function updateCardFooter(el) {
+                const card = el.closest('.card');
+                const kind = card.dataset.kind;
+                card.querySelector('.card-footer').innerHTML = renderCardFooter(
+                    kind,
+                    draft[kind][Number(card.dataset.index)],
+                );
+                updateConfigState();
+            }
             $('config-form').addEventListener('input', (e) => {
                 const el = e.target;
                 if (!el.dataset.path) return;
@@ -976,13 +1227,8 @@
                 if (el.dataset.kind === 'bool') value = el.checked;
                 else if (el.dataset.kind === 'number') value = el.value === '' ? null : Number(el.value);
                 else if (el.dataset.kind === 'optional') value = el.value.trim() || undefined;
-                if (el.dataset.rename != null) {
-                    // Keep the vehicles' connector references in sync with the renamed ID.
-                    const old = draft.connectors[Number(el.dataset.rename)].id;
-                    for (const v of draft.vehicles) v.connectors = v.connectors.map((c) => (c === old ? value : c));
-                }
                 setPath(draft, el.dataset.path, value);
-                setDirty(true);
+                updateCardFooter(el);
                 if (el.dataset.kind === 'bool') el.closest('.card').classList.toggle('disabled', !value);
                 if (el.dataset.speed != null) el.previousElementSibling.textContent = speedLabel(value);
                 if (el.dataset.coord != null || el.dataset.path.endsWith('.name')) drawConfigOverlay();
@@ -994,7 +1240,7 @@
                     v.connectors = el.checked
                         ? [...v.connectors, el.value]
                         : v.connectors.filter((c) => c !== el.value);
-                    setDirty(true);
+                    updateCardFooter(el);
                     return;
                 }
                 if (el.dataset.rerender == null) return;
@@ -1008,25 +1254,30 @@
                     item.data = Object.fromEntries(fields.map((f) => [f, item.data?.[f] ?? '']));
                 }
                 renderConfig();
+                updateConfigState();
             });
             $('config-form').addEventListener('click', (e) => {
                 const btn = e.target.closest('button[data-action]');
                 if (!btn) return;
                 const i = Number(btn.dataset.index);
+                const item = btn.dataset.kind && draft[btn.dataset.kind][i];
                 switch (btn.dataset.action) {
+                    case 'save':
+                        saveItem(btn.dataset.kind, item);
+                        return;
+                    case 'revert':
+                        revertItem(btn.dataset.kind, item);
+                        return;
+                    case 'delete':
+                        deleteItem(btn.dataset.kind, item);
+                        return;
                     case 'add-connector': {
                         const type = Object.keys(configMeta.connectorTypes)[0];
                         draft.connectors.push({
-                            id: `connector-${draft.connectors.length + 1}`,
+                            name: `connector-${draft.connectors.length + 1}`,
                             connector: type,
                             data: Object.fromEntries(configMeta.connectorTypes[type].map((f) => [f, ''])),
                         });
-                        break;
-                    }
-                    case 'remove-connector': {
-                        const id = draft.connectors[i].id;
-                        draft.connectors.splice(i, 1);
-                        for (const v of draft.vehicles) v.connectors = v.connectors.filter((c) => c !== id);
                         break;
                     }
                     case 'add-vehicle': {
@@ -1041,9 +1292,6 @@
                         draft.vehicles.push(v);
                         break;
                     }
-                    case 'remove-vehicle':
-                        draft.vehicles.splice(i, 1);
-                        break;
                     case 'pick': {
                         const same = pickTarget && pickTarget.index === i && pickTarget.field === btn.dataset.field;
                         pickTarget = same ? null : {index: i, field: btn.dataset.field};
@@ -1055,8 +1303,8 @@
                 }
                 pickTarget = null;
                 $('map').classList.remove('picking');
-                setDirty(true);
                 renderConfig();
+                updateConfigState();
             });
 
             function cancelPick() {
@@ -1072,48 +1320,18 @@
                 v.data[pickTarget.field] = {latitude: round(e.latlng.lat), longitude: round(e.latlng.lng)};
                 pickTarget = null;
                 $('map').classList.remove('picking');
-                setDirty(true);
                 renderConfig();
+                updateConfigState();
             });
             document.addEventListener('keydown', (e) => e.key === 'Escape' && cancelPick());
 
-            async function saveConfig() {
-                cancelPick();
-                saving = true;
-                showConfigErrors([]);
-                updateConfigState();
-                try {
-                    const res = await fetch('api/config', {
-                        method: 'PUT',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify(draft),
-                    });
-                    const body = await res.json().catch(() => ({}));
-                    saving = false;
-                    if (res.ok) {
-                        draft = body.config;
-                        setDirty(false);
-                        renderConfig();
-                        updateConfigState('Saved and applied.');
-                        return;
-                    }
-                    showConfigErrors(body.errors ?? [body.error ?? `Request failed (${res.status})`]);
-                    // 500: the config was stored, only starting the simulations failed.
-                    setDirty(res.status !== 500);
-                } catch (err) {
-                    saving = false;
-                    setDirty(true);
-                    showConfigErrors([`Could not reach the simulator: ${err.message}`]);
-                }
-            }
-            $('config-save').addEventListener('click', saveConfig);
             $('config-discard').addEventListener('click', () => {
                 showConfigErrors([]);
                 cancelPick();
                 loadConfig();
             });
             window.addEventListener('beforeunload', (e) => {
-                if (dirty) e.preventDefault();
+                if (unsavedCount()) e.preventDefault();
             });
 
             function setView(next) {

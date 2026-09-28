@@ -2,132 +2,49 @@
  * ConfigStore.ts
  * --------------
  * Persists the simulator configuration (connectors and vehicles) in SQLite.
- * Exports: ConfigStore, validateConfig, CONNECTOR_TYPES, SIMULATOR_TYPES
- * Purpose: replace the static config.json so the configuration can be edited through the web UI.
+ * Validation of untrusted input lives in validation.ts.
  */
 
+import {randomUUID, UUID} from 'node:crypto';
 import {Database} from 'sqlite';
-import {ConfigType, LatLonPosition} from '../Types';
+import {ConfigType, ConnectorConfig, VehicleConfig} from '../Types';
 
-export const CONNECTOR_TYPES: Record<string, string[]> = {
-    ApiConnector: ['url', 'token'],
-    WebSocketConnector: ['url', 'token'],
-    SqliteConnector: ['databasePath'],
-};
+interface ConnectorRow {
+    id: string;
+    name: string;
+    connector: string;
+    data: string;
+}
+const CONNECTOR_COLUMNS = 'id, name, connector, data';
+interface VehicleRow {
+    name: string;
+    enabled: number;
+    // Never null after setup(), see assignVehicleIds().
+    entity_id: string;
+    simulator: string;
+    data: string;
+    connectors: string;
+}
+const VEHICLE_COLUMNS = 'name, enabled, entity_id, simulator, data, connectors';
 
-export const SIMULATOR_TYPES: Record<string, string[]> = {
-    RouteSimulator: ['start', 'end'],
-    RandomRouteSimulator: ['corner1', 'corner2'],
-    EmergencyDispatchSimulator: ['corner1', 'corner2', 'homeLocation'],
-};
-
-type ConnectorConfig = ConfigType['connectors'][number];
-type VehicleConfig = ConfigType['vehicles'][number];
-
-function isObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
+function toConnector(row: ConnectorRow): ConnectorConfig {
+    return {
+        id: row.id as UUID,
+        name: row.name,
+        connector: row.connector,
+        data: JSON.parse(row.data) as ConnectorConfig['data'],
+    };
 }
 
-function isPosition(value: unknown): value is LatLonPosition {
-    return (
-        isObject(value) &&
-        typeof value.latitude === 'number' &&
-        typeof value.longitude === 'number' &&
-        Math.abs(value.latitude) <= 90 &&
-        Math.abs(value.longitude) <= 180
-    );
-}
-
-/**
- * Checks an untrusted config object (e.g. a request body).
- * Returns a list of human-readable problems; an empty list means the config is valid.
- */
-export function validateConfig(config: unknown): string[] {
-    if (!isObject(config) || !Array.isArray(config.connectors) || !Array.isArray(config.vehicles)) {
-        return ['Config must be an object with "connectors" and "vehicles" arrays.'];
-    }
-    const errors: string[] = [];
-    const connectorIds = new Set<string>();
-
-    config.connectors.forEach((conn: unknown, i: number) => {
-        const where = `Connector ${i + 1}`;
-        if (!isObject(conn)) {
-            errors.push(`${where}: must be an object.`);
-            return;
-        }
-        if (typeof conn.id !== 'string' || conn.id.trim() === '') {
-            errors.push(`${where}: ID is required.`);
-        } else if (connectorIds.has(conn.id)) {
-            errors.push(`${where}: ID "${conn.id}" is used more than once.`);
-        } else {
-            connectorIds.add(conn.id);
-        }
-        const fields = typeof conn.connector === 'string' ? CONNECTOR_TYPES[conn.connector] : undefined;
-        if (!fields) {
-            errors.push(`${where}: unknown connector type "${String(conn.connector)}".`);
-            return;
-        }
-        if (!isObject(conn.data)) {
-            errors.push(`${where}: data must be an object.`);
-            return;
-        }
-        for (const field of fields) {
-            if (typeof conn.data[field] !== 'string' || conn.data[field] === '') {
-                errors.push(`${where}: "${field}" is required.`);
-            }
-        }
-    });
-
-    const names = new Set<string>();
-    config.vehicles.forEach((vehicle: unknown, i: number) => {
-        const where = `Vehicle ${i + 1}`;
-        if (!isObject(vehicle)) {
-            errors.push(`${where}: must be an object.`);
-            return;
-        }
-        if (typeof vehicle.name !== 'string' || vehicle.name.trim() === '') {
-            errors.push(`${where}: name is required.`);
-        } else if (names.has(vehicle.name)) {
-            // Vehicles without an ID are matched to API units by name.
-            errors.push(`${where}: name "${vehicle.name}" is used more than once.`);
-        } else {
-            names.add(vehicle.name);
-        }
-        if (typeof vehicle.enabled !== 'boolean') {
-            errors.push(`${where}: "enabled" must be true or false.`);
-        }
-        if (vehicle.id != null && typeof vehicle.id !== 'string') {
-            errors.push(`${where}: ID must be a string.`);
-        }
-        if (!Array.isArray(vehicle.connectors) || vehicle.connectors.some((c) => typeof c !== 'string')) {
-            errors.push(`${where}: connectors must be a list of connector IDs.`);
-        } else {
-            for (const connId of vehicle.connectors as string[]) {
-                if (!connectorIds.has(connId)) {
-                    errors.push(`${where}: connector "${connId}" does not exist.`);
-                }
-            }
-        }
-        const fields = typeof vehicle.simulator === 'string' ? SIMULATOR_TYPES[vehicle.simulator] : undefined;
-        if (!fields) {
-            errors.push(`${where}: unknown simulator "${String(vehicle.simulator)}".`);
-            return;
-        }
-        if (!isObject(vehicle.data)) {
-            errors.push(`${where}: data must be an object.`);
-            return;
-        }
-        if (typeof vehicle.data.speed !== 'number' || !(vehicle.data.speed > 0)) {
-            errors.push(`${where}: speed must be a positive number.`);
-        }
-        for (const field of fields) {
-            if (!isPosition(vehicle.data[field])) {
-                errors.push(`${where}: "${field}" must be a valid latitude/longitude.`);
-            }
-        }
-    });
-
-    return errors;
+function toVehicle(row: VehicleRow): VehicleConfig {
+    return {
+        name: row.name,
+        enabled: row.enabled === 1,
+        id: row.entity_id as UUID,
+        simulator: row.simulator,
+        data: JSON.parse(row.data) as VehicleConfig['data'],
+        connectors: JSON.parse(row.connectors) as UUID[],
+    };
 }
 
 export class ConfigStore {
@@ -138,13 +55,6 @@ export class ConfigStore {
     }
 
     async setup(): Promise<void> {
-        await this.db.run(`CREATE TABLE IF NOT EXISTS config_connectors
-                           (
-                               id        TEXT PRIMARY KEY,
-                               position  INTEGER NOT NULL,
-                               connector TEXT    NOT NULL,
-                               data      TEXT    NOT NULL
-                           )`);
         await this.db.run(`CREATE TABLE IF NOT EXISTS config_vehicles
                            (
                                key        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,83 +66,199 @@ export class ConfigStore {
                                data       TEXT    NOT NULL,
                                connectors TEXT    NOT NULL
                            )`);
+        await this.migrateConnectorIds();
+        await this.assignVehicleIds();
+        await this.createConnectorTable();
     }
 
-    async isEmpty(): Promise<boolean> {
-        const connectors = await this.db.get<{n: number}>('SELECT COUNT(*) AS n FROM config_connectors');
-        const vehicles = await this.db.get<{n: number}>('SELECT COUNT(*) AS n FROM config_vehicles');
-        return (connectors?.n ?? 0) === 0 && (vehicles?.n ?? 0) === 0;
+    private async createConnectorTable(): Promise<void> {
+        await this.db.run(`CREATE TABLE IF NOT EXISTS config_connectors
+                           (
+                               id        TEXT PRIMARY KEY,
+                               name      TEXT    NOT NULL UNIQUE,
+                               position  INTEGER NOT NULL,
+                               connector TEXT    NOT NULL,
+                               data      TEXT    NOT NULL
+                           )`);
+    }
+
+    /**
+     * Older databases used the typed-in connector ID as primary key. It becomes the connector's name, the
+     * connector gets a UUID, and the vehicles' references are rewritten to it.
+     */
+    private async migrateConnectorIds(): Promise<void> {
+        const columns = await this.db.all<{name: string}[]>('PRAGMA table_info(config_connectors)');
+        if (columns.length === 0 || columns.some((c) => c.name === 'name')) {
+            return;
+        }
+        await this.transaction(async () => {
+            await this.db.run('ALTER TABLE config_connectors RENAME TO config_connectors_old');
+            await this.createConnectorTable();
+            const rows = await this.db.all<{id: string}[]>('SELECT id FROM config_connectors_old');
+            for (const row of rows) {
+                const id = randomUUID();
+                await this.db.run(
+                    `INSERT INTO config_connectors (id, name, position, connector, data)
+                     SELECT ?, id, position, connector, data FROM config_connectors_old WHERE id = ?`,
+                    id,
+                    row.id,
+                );
+                await this.replaceConnectorReference(row.id, id);
+            }
+            await this.db.run('DROP TABLE config_connectors_old');
+        });
+    }
+
+    /** Vehicles are addressed by ID in the API; older rows may not have one yet. */
+    private async assignVehicleIds(): Promise<void> {
+        const rows = await this.db.all<{key: number}[]>('SELECT key FROM config_vehicles WHERE entity_id IS NULL');
+        for (const row of rows) {
+            await this.db.run('UPDATE config_vehicles SET entity_id = ? WHERE key = ?', randomUUID(), row.key);
+        }
     }
 
     async load(): Promise<ConfigType> {
-        const connectors = await this.db.all<{id: string; connector: string; data: string}[]>(
-            'SELECT id, connector, data FROM config_connectors ORDER BY position',
-        );
-        const vehicles = await this.db.all<
-            {
-                name: string;
-                enabled: number;
-                entity_id: string | null;
-                simulator: string;
-                data: string;
-                connectors: string;
-            }[]
-        >('SELECT name, enabled, entity_id, simulator, data, connectors FROM config_vehicles ORDER BY position');
-
         return {
-            connectors: connectors.map((c): ConnectorConfig => ({
-                id: c.id,
-                connector: c.connector,
-                data: JSON.parse(c.data) as ConnectorConfig['data'],
-            })),
-            vehicles: vehicles.map((v): VehicleConfig => ({
-                name: v.name,
-                enabled: v.enabled === 1,
-                id: v.entity_id ?? undefined,
-                simulator: v.simulator,
-                data: JSON.parse(v.data) as VehicleConfig['data'],
-                connectors: JSON.parse(v.connectors) as string[],
-            })),
+            connectors: await this.listConnectors(),
+            vehicles: await this.listVehicles(),
         };
     }
 
-    /** Replaces the stored config. The caller is responsible for validating it first. */
-    async save(config: ConfigType): Promise<void> {
+    // Connectors ---------------------------------------------------------------------------------
+
+    async listConnectors(): Promise<ConnectorConfig[]> {
+        const rows = await this.db.all<ConnectorRow[]>(
+            `SELECT ${CONNECTOR_COLUMNS} FROM config_connectors ORDER BY position`,
+        );
+        return rows.map(toConnector);
+    }
+
+    async getConnector(id: string): Promise<ConnectorConfig | undefined> {
+        const row = await this.db.get<ConnectorRow>(
+            `SELECT ${CONNECTOR_COLUMNS} FROM config_connectors WHERE id = ?`,
+            id,
+        );
+        return row && toConnector(row);
+    }
+
+    /** Appends a connector. Throws if the ID or name is already taken. */
+    async createConnector(conn: ConnectorConfig): Promise<void> {
+        await this.db.run(
+            `INSERT INTO config_connectors (id, name, position, connector, data)
+             VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM config_connectors), ?, ?)`,
+            conn.id,
+            conn.name,
+            conn.connector,
+            JSON.stringify(conn.data),
+        );
+    }
+
+    /** Updates the connector with the given ID, keeping its position. Returns false if no such connector exists. */
+    async updateConnector(id: string, conn: Omit<ConnectorConfig, 'id'>): Promise<boolean> {
+        const result = await this.db.run(
+            'UPDATE config_connectors SET name = ?, connector = ?, data = ? WHERE id = ?',
+            conn.name,
+            conn.connector,
+            JSON.stringify(conn.data),
+            id,
+        );
+        return !!result.changes;
+    }
+
+    /** Deletes a connector and removes it from all vehicles. Returns false if no such connector exists. */
+    async deleteConnector(id: string): Promise<boolean> {
+        return this.transaction(async () => {
+            const result = await this.db.run('DELETE FROM config_connectors WHERE id = ?', id);
+            if (!result.changes) {
+                return false;
+            }
+            await this.replaceConnectorReference(id, null);
+            return true;
+        });
+    }
+
+    /** Rewrites a connector ID in every vehicle's connector list; `to = null` removes it. */
+    private async replaceConnectorReference(from: string, to: string | null): Promise<void> {
+        const rows = await this.db.all<{key: number; connectors: string}[]>(
+            'SELECT key, connectors FROM config_vehicles',
+        );
+        for (const row of rows) {
+            const connectors = JSON.parse(row.connectors) as string[];
+            if (!connectors.includes(from)) {
+                continue;
+            }
+            const updated =
+                to == null ? connectors.filter((c) => c !== from) : connectors.map((c) => (c === from ? to : c));
+            await this.db.run(
+                'UPDATE config_vehicles SET connectors = ? WHERE key = ?',
+                JSON.stringify(updated),
+                row.key,
+            );
+        }
+    }
+
+    // Vehicles -----------------------------------------------------------------------------------
+
+    async listVehicles(): Promise<VehicleConfig[]> {
+        const rows = await this.db.all<VehicleRow[]>(
+            `SELECT ${VEHICLE_COLUMNS} FROM config_vehicles ORDER BY position`,
+        );
+        return rows.map(toVehicle);
+    }
+
+    async getVehicleById(id: string): Promise<VehicleConfig | undefined> {
+        const row = await this.db.get<VehicleRow>(
+            `SELECT ${VEHICLE_COLUMNS} FROM config_vehicles WHERE entity_id = ?`,
+            id,
+        );
+        return row && toVehicle(row);
+    }
+
+    /** Appends a vehicle. Throws if the name is already taken. */
+    async createVehicle(vehicle: VehicleConfig): Promise<void> {
+        await this.db.run(
+            `INSERT INTO config_vehicles (position, name, enabled, entity_id, simulator, data, connectors)
+             VALUES ((SELECT COALESCE(MAX(position), -1) + 1 FROM config_vehicles), ?, ?, ?, ?, ?, ?)`,
+            vehicle.name,
+            vehicle.enabled ? 1 : 0,
+            vehicle.id,
+            vehicle.simulator,
+            JSON.stringify(vehicle.data),
+            JSON.stringify(vehicle.connectors),
+        );
+    }
+
+    /** Updates the vehicle with the given ID, keeping its position. Returns false if no such vehicle exists. */
+    async updateVehicleById(id: string, vehicle: Omit<VehicleConfig, 'id'>): Promise<boolean> {
+        const result = await this.db.run(
+            `UPDATE config_vehicles
+             SET name = ?, enabled = ?, simulator = ?, data = ?, connectors = ?
+             WHERE entity_id = ?`,
+            vehicle.name,
+            vehicle.enabled ? 1 : 0,
+            vehicle.simulator,
+            JSON.stringify(vehicle.data),
+            JSON.stringify(vehicle.connectors),
+            id,
+        );
+        return !!result.changes;
+    }
+
+    /** Returns false if no such vehicle exists. */
+    async deleteVehicleById(id: string): Promise<boolean> {
+        const result = await this.db.run('DELETE FROM config_vehicles WHERE entity_id = ?', id);
+        return !!result.changes;
+    }
+
+    private async transaction<T>(fn: () => Promise<T>): Promise<T> {
         await this.db.run('BEGIN');
         try {
-            await this.db.run('DELETE FROM config_connectors');
-            await this.db.run('DELETE FROM config_vehicles');
-            for (const [i, conn] of config.connectors.entries()) {
-                await this.db.run(
-                    'INSERT INTO config_connectors (id, position, connector, data) VALUES (?, ?, ?, ?)',
-                    conn.id,
-                    i,
-                    conn.connector,
-                    JSON.stringify(conn.data),
-                );
-            }
-            for (const [i, vehicle] of config.vehicles.entries()) {
-                await this.db.run(
-                    `INSERT INTO config_vehicles (position, name, enabled, entity_id, simulator, data, connectors)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                    i,
-                    vehicle.name,
-                    vehicle.enabled ? 1 : 0,
-                    vehicle.id || null,
-                    vehicle.simulator,
-                    JSON.stringify(vehicle.data),
-                    JSON.stringify(vehicle.connectors),
-                );
-            }
+            const result = await fn();
             await this.db.run('COMMIT');
+            return result;
         } catch (e) {
             await this.db.run('ROLLBACK');
             throw e;
         }
-    }
-
-    /** Remembers an ID that was looked up or created for a vehicle, so the next start reuses it. */
-    async setVehicleId(name: string, id: string): Promise<void> {
-        await this.db.run('UPDATE config_vehicles SET entity_id = ? WHERE name = ? AND entity_id IS NULL', id, name);
     }
 }

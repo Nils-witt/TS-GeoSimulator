@@ -1,46 +1,23 @@
-import {EventListener, LatLonPosition} from '../Types';
+import {LatLonPosition} from '../Types';
 import {UUID} from 'crypto';
 import {randomUUID} from 'node:crypto';
-import {SimulatorPositionUpdateEvent} from '../events/SimulatorPositionUpdateEvent';
-import {SimulatorStatusEvent} from '../events/SimulatorStatusEvent';
-import {SimulatorRouteEvent} from '../events/SimulatorRouteEvent';
+import {Emitter} from '../utils/Emitter';
+import {PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
 
-export abstract class AbstractSimulator {
-    private listeners = new Map<string, EventListener[]>();
+export abstract class AbstractSimulator extends Emitter {
     private position: LatLonPosition | null = null;
-    private positionsHistory: Map<number, LatLonPosition | null> = new Map<number, LatLonPosition | null>();
     private id: UUID;
     private status = 6;
 
     private route: LatLonPosition[] = [];
 
     constructor(id: UUID = randomUUID()) {
+        super();
         this.id = id;
-        /* empty */
-    }
-
-    on(eventName: string, listener: EventListener): void {
-        if (!this.listeners.has(eventName)) {
-            this.listeners.set(eventName, []);
-        }
-        this.listeners.get(eventName)!.push(listener);
-    }
-
-    emit(event: Event): void {
-        const eventListeners = this.listeners.get(event.type);
-        if (eventListeners) {
-            for (const listener of eventListeners) {
-                listener(event);
-            }
-        }
     }
 
     getPosition(): LatLonPosition | null {
         return this.position;
-    }
-
-    getPositionsHistory(): Map<number, LatLonPosition | null> {
-        return this.positionsHistory;
     }
 
     getRoute(): LatLonPosition[] {
@@ -49,23 +26,18 @@ export abstract class AbstractSimulator {
 
     setRoute(route: LatLonPosition[]): void {
         this.route = route;
-        this.emit(new SimulatorRouteEvent(route));
+        this.emit(new RouteEvent(this, route));
     }
 
-    /**
-     * Protected helper for subclasses to update the simulator position.
-     * Automatically appends to history and emits a PositionUpdateEvent.
-     */
+    /** Protected helper for subclasses to update the simulator position and emit a PositionUpdateEvent. */
     protected setPosition(position: LatLonPosition | null): void {
         this.position = position;
-        const ts = Date.now();
-        this.positionsHistory.set(ts, position);
-        this.emit(new SimulatorPositionUpdateEvent(position));
+        this.emit(new PositionUpdateEvent(this, position));
     }
 
     protected setStatus(status: number): void {
         this.status = status;
-        this.emit(new SimulatorStatusEvent(status));
+        this.emit(new StatusEvent(this, status));
     }
 
     public getStatus(): number {

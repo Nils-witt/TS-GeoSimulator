@@ -8,14 +8,11 @@
  */
 
 import {Unit} from '../entities/Unit';
-import {EntityPositionUpdateEvent} from '../events/EntityPositionUpdateEvent';
-import {EntityRouteEvent} from '../events/EntityRouteEvent';
-import {EntityStatusEvent} from '../events/EntityStatusEvent';
 import {AbstractConnector} from './AbstractConnector';
-import {randomUUID} from 'node:crypto';
 import {ApplicationLogger} from '../utils/Logger';
 import {UUID} from 'crypto';
 import {LatLonPosition, TimedLatLonPosition} from '../Types';
+import {PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
 
 interface ApiPosition {
     lat: number;
@@ -52,8 +49,8 @@ export class ApiConnector extends AbstractConnector {
     private pendingPositions: Map<string, ApiPosition | null> = new Map<string, ApiPosition | null>();
     private positionsInFlight: Set<string> = new Set<string>();
 
-    constructor(apiUrl: string, apiToken: string) {
-        super(randomUUID());
+    constructor(uuid: string, apiUrl: string, apiToken: string) {
+        super(uuid);
         // Accept both the server root and the /api base as configured URL.
         this.apiUrl = apiUrl.replace(/\/+$/, '').replace(/\/api$/, '') + '/api';
         this.apiToken = apiToken;
@@ -87,23 +84,23 @@ export class ApiConnector extends AbstractConnector {
         return null;
     }
 
-    async onEntityPositionUpdate(event: EntityPositionUpdateEvent): Promise<void> {
+    async onEntityPositionUpdate(event: PositionUpdateEvent): Promise<void> {
         const position = event.getPosition();
-        await this.queuePositionUpdate(event.getEntity().getId(), position ? this.toApiPosition(position) : null);
+        await this.queuePositionUpdate(event.getSource().getId(), position ? this.toApiPosition(position) : null);
     }
 
-    async onEntityStatusUpdate(event: EntityStatusEvent): Promise<void> {
+    async onEntityStatusUpdate(event: StatusEvent): Promise<void> {
         // The API has no unit status field.
-        ApplicationLogger.debug(`Ignoring status update ${event.getStatus()} for ${event.getEntity().getId()}`, {
+        ApplicationLogger.debug(`Ignoring status update ${event.getStatus()} for ${event.getSource().getId()}`, {
             service: this.constructor.name,
             id: this.getId(),
         });
         return Promise.resolve();
     }
 
-    async onEntityRouteUpdate(event: EntityRouteEvent): Promise<void> {
+    async onEntityRouteUpdate(event: RouteEvent): Promise<void> {
         // The API has no unit route field.
-        ApplicationLogger.debug(`Ignoring route update for ${event.getEntity().getId()}`, {
+        ApplicationLogger.debug(`Ignoring route update for ${event.getSource().getId()}`, {
             service: this.constructor.name,
             id: this.getId(),
         });
@@ -218,9 +215,8 @@ export class ApiConnector extends AbstractConnector {
                 const next = this.pendingPositions.get(unitId) ?? null;
                 this.pendingPositions.delete(unitId);
                 try {
-                    await this.callApi(`/units/${unitId}`, 'PATCH', {position: next});
+                    await this.callApi(`/units/${unitId}/position`, 'PUT', next!);
                 } catch (e) {
-                    console.log(e);
                     ApplicationLogger.error(`Error updating position of unit ${unitId}: ${e}`, {
                         service: this.constructor.name,
                         id: this.getId(),

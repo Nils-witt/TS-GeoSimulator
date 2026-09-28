@@ -2,47 +2,38 @@ import {UUID} from 'crypto';
 import {AbstractEntity} from './AbstractEntity';
 import {ApplicationLogger} from '../utils/Logger';
 import {AbstractSimulator} from '../simulator/AbstractSimulator';
-import {SimulatorPositionUpdateEvent} from '../events/SimulatorPositionUpdateEvent';
-import {EntityStatusEvent} from '../events/EntityStatusEvent';
-import {SimulatorStatusEvent} from '../events/SimulatorStatusEvent';
 import {LatLonPosition} from '../Types';
-import {EntityRouteEvent} from '../events/EntityRouteEvent';
-import {SimulatorRouteEvent} from '../events/SimulatorRouteEvent';
-import * as fs from 'node:fs';
+import {PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
 
 export class Vehicle extends AbstractEntity {
-    private simulator: AbstractSimulator | null = null;
+    private simulator: AbstractSimulator;
     private status = 6;
 
-    constructor(id: UUID, name: string) {
+    constructor(id: UUID, name: string, simulator: AbstractSimulator) {
         super(id, name);
+        this.simulator = simulator;
+        this.simulator.on('positionUpdate', (event) => {
+            this.setPosition((event as PositionUpdateEvent<AbstractSimulator>).getPosition());
+        });
+        this.simulator.on('statusUpdate', (event) => {
+            this.setStatus((event as StatusEvent<AbstractSimulator>).getStatus());
+        });
+        this.simulator.on('routeUpdate', (event) => {
+            this.emit(new RouteEvent(this, (event as RouteEvent<AbstractSimulator>).getRoute()));
+            ApplicationLogger.info(`Vehicle ID: ${this.id} route updated.`, {
+                service: this.constructor.name,
+                id: this.getId(),
+            });
+        });
     }
 
     getInfo(): string {
         return `Vehicle ID: ${this.id}, Created At: ${this.createdAt.toISOString()}, Updated At: ${this.updatedAt.toISOString()}`;
     }
 
-    async setup(simulator: AbstractSimulator): Promise<void> {
-        this.simulator = simulator;
+    /** Prepares the simulator (e.g. fetches its route). Attach connectors first to receive the route. */
+    async setup(): Promise<void> {
         await this.simulator.setup();
-        this.simulator.on('positionUpdate', (event) => {
-            this.setPosition((event as SimulatorPositionUpdateEvent).getPosition());
-        });
-        this.simulator.on('statusUpdate', (event) => {
-            this.setStatus((event as SimulatorStatusEvent).getStatus());
-        });
-        this.simulator.on('routeUpdate', (event) => {
-            this.emit(new EntityRouteEvent(this, (event as SimulatorRouteEvent).getRoute()));
-            ApplicationLogger.info(`Vehicle ID: ${this.id} route updated.`, {
-                service: this.constructor.name,
-                id: this.getId(),
-            });
-            fs.mkdirSync(`data/${this.id}/`, {recursive: true});
-            fs.writeFileSync(
-                `data/${this.id}/vehicle_${this.id}_${Date.now()}_route.json`,
-                JSON.stringify((event as SimulatorRouteEvent).getRoute(), null, 2),
-            );
-        });
         ApplicationLogger.info(`Vehicle ID: ${this.id} setup completed.`, {
             service: this.constructor.name,
             id: this.getId(),
@@ -54,9 +45,7 @@ export class Vehicle extends AbstractEntity {
             service: this.constructor.name,
             id: this.getId(),
         });
-        if (this.simulator) {
-            this.simulator.start();
-        }
+        this.simulator.start();
     }
 
     stop(): void {
@@ -64,9 +53,7 @@ export class Vehicle extends AbstractEntity {
             service: this.constructor.name,
             id: this.getId(),
         });
-        if (this.simulator) {
-            this.simulator.stop();
-        }
+        this.simulator.stop();
     }
 
     public getStatus(): number {
@@ -78,18 +65,15 @@ export class Vehicle extends AbstractEntity {
             service: this.constructor.name,
             id: this.getId(),
         });
-        this.emit(new EntityStatusEvent(this, status));
         this.status = status;
+        this.emit(new StatusEvent(this, status));
     }
 
-    public getSimulatorName(): string | null {
-        return this.simulator ? this.simulator.constructor.name : null;
+    public getSimulatorName(): string {
+        return this.simulator.constructor.name;
     }
 
-    public getRoute(): LatLonPosition[] | null {
-        if (this.simulator) {
-            return this.simulator.getRoute();
-        }
-        return null;
+    public getRoute(): LatLonPosition[] {
+        return this.simulator.getRoute();
     }
 }

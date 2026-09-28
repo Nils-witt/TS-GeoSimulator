@@ -1,8 +1,6 @@
 import {AbstractEntity} from '../entities/AbstractEntity';
 import {UUID} from 'crypto';
-import {EntityPositionUpdateEvent} from '../events/EntityPositionUpdateEvent';
-import {EntityStatusEvent} from '../events/EntityStatusEvent';
-import {EntityRouteEvent} from '../events/EntityRouteEvent';
+import {PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
 
 export abstract class AbstractConnector {
     private id: string;
@@ -18,11 +16,11 @@ export abstract class AbstractConnector {
 
     abstract setup(): Promise<void>;
 
-    abstract onEntityPositionUpdate(event: EntityPositionUpdateEvent): Promise<void>;
+    abstract onEntityPositionUpdate(event: PositionUpdateEvent): Promise<void>;
 
-    abstract onEntityStatusUpdate(event: EntityStatusEvent): Promise<void>;
+    abstract onEntityStatusUpdate(event: StatusEvent): Promise<void>;
 
-    abstract onEntityRouteUpdate(event: EntityRouteEvent): Promise<void>;
+    abstract onEntityRouteUpdate(event: RouteEvent): Promise<void>;
 
     attachEntity(entity: AbstractEntity): void {
         if (this.entities.has(entity.getId())) {
@@ -30,20 +28,29 @@ export abstract class AbstractConnector {
         }
         this.entities.set(entity.getId(), entity);
 
+        // Entities cannot remove listeners, so events are dropped once the entity is detached.
+        const attached = () => this.entities.get(entity.getId()) === entity;
         entity.on('positionUpdate', (event) => {
-            this.onEntityPositionUpdate(event as EntityPositionUpdateEvent);
+            if (attached()) this.onEntityPositionUpdate(event as PositionUpdateEvent);
         });
         entity.on('statusUpdate', (event) => {
-            this.onEntityStatusUpdate(event as EntityStatusEvent);
+            if (attached()) this.onEntityStatusUpdate(event as StatusEvent);
         });
         entity.on('routeUpdate', (event) => {
-            this.onEntityRouteUpdate(event as EntityRouteEvent);
+            if (attached()) this.onEntityRouteUpdate(event as RouteEvent);
         });
     }
 
     /**
+     * Forgets one attached entity; its events are no longer forwarded to this connector.
+     */
+    detachEntity(id: string): void {
+        this.entities.delete(id as UUID);
+    }
+
+    /**
      * Forgets all attached entities, e.g. before the simulations are rebuilt.
-     * Listeners stay registered on the old entities, which must be stopped by the caller.
+     * Their events are no longer forwarded; the old entities must still be stopped by the caller.
      */
     detachAll(): void {
         this.entities.clear();

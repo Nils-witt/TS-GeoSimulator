@@ -1,34 +1,20 @@
-import {type DBRecord, Entity} from './Entity';
-
+/** A unit as known to the go-unit-management API (see ApiConnector). */
 export interface IUnit {
     id?: string;
     name: string;
 }
 
-export class Unit extends Entity {
+export class Unit {
     private id: string | null;
     private name: string;
 
     constructor(data: IUnit) {
-        super();
         this.id = data.id || null;
         this.name = data.name;
     }
 
-    public static of(data: DBRecord): Unit {
-        return new Unit({
-            id: data.id ? (data.id as string) : undefined,
-            name: data.name as string,
-        });
-    }
-
-    record(): DBRecord {
-        const record: DBRecord = {};
-        record['id'] = this.id;
-        return {
-            id: this.id,
-            name: this.name,
-        };
+    public static of(data: IUnit): Unit {
+        return new Unit(data);
     }
 
     public getId(): string | null {

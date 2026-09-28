@@ -1,8 +1,9 @@
 import {AbstractSimulator} from './AbstractSimulator';
 import {LatLonPosition} from '../Types';
 import {ApplicationLogger} from '../utils/Logger';
-import {RouteFinishedEvent} from '../events/RouteFinishedEvent';
 import {getFormattedDate} from '../utils/Helpers';
+import {bearingBetween, haversineDistance, offsetPosition} from '../utils/Geo';
+import {RouteFinishedEvent} from '../events/Events';
 
 export interface RouteSimulatorOptions {
     serverUrl?: string; // e.g. https://router.project-osrm.org/route/v1
@@ -85,6 +86,10 @@ export class RouteSimulator extends AbstractSimulator {
             return;
         }
 
+        if (this.getRoute().length === 0) {
+            // The route could not be fetched; setup() already logged it.
+            return;
+        }
         this.currentIndex = 0;
         this.remainingDistanceInSegment = 0;
         this.setPosition(this.getRoute()[0]);
@@ -208,64 +213,8 @@ export class RouteSimulator extends AbstractSimulator {
 
         // interpolate along bearing
         const bearing = bearingBetween(from, to);
-        const newPos = offsetPosition(from.latitude, from.longitude, step, bearing);
+        const newPos = offsetPosition(from, step, bearing);
         this.remainingDistanceInSegment -= step;
         this.setPosition(newPos);
     }
-}
-
-// --- Helper functions ---
-
-function toRad(d: number) {
-    return (d * Math.PI) / 180;
-}
-
-function toDeg(r: number) {
-    return (r * 180) / Math.PI;
-}
-
-function haversineDistance(a: LatLonPosition, b: LatLonPosition): number {
-    const R = 6371000; // meters
-    const dLat = toRad(b.latitude - a.latitude);
-    const dLon = toRad(b.longitude - a.longitude);
-    const lat1 = toRad(a.latitude);
-    const lat2 = toRad(b.latitude);
-
-    const sinDLat = Math.sin(dLat / 2);
-    const sinDLon = Math.sin(dLon / 2);
-    const h = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon;
-    const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-    return R * c;
-}
-
-function bearingBetween(a: LatLonPosition, b: LatLonPosition): number {
-    const lat1 = toRad(a.latitude);
-    const lat2 = toRad(b.latitude);
-    const dLon = toRad(b.longitude - a.longitude);
-    const y = Math.sin(dLon) * Math.cos(lat2);
-    const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-    return (toDeg(Math.atan2(y, x)) + 360) % 360;
-}
-
-function offsetPosition(
-    latDeg: number,
-    lonDeg: number,
-    distanceMeters: number,
-    bearingDeg: number,
-    earthRadiusMeters = 6371000,
-): LatLonPosition {
-    const lat1 = toRad(latDeg);
-    const lon1 = toRad(lonDeg);
-    const bearing = toRad(bearingDeg);
-    const angularDist = distanceMeters / earthRadiusMeters;
-
-    const sinLat2 = Math.sin(lat1) * Math.cos(angularDist) + Math.cos(lat1) * Math.sin(angularDist) * Math.cos(bearing);
-    const lat2 = Math.asin(Math.min(1, Math.max(-1, sinLat2)));
-
-    const y = Math.sin(bearing) * Math.sin(angularDist) * Math.cos(lat1);
-    const x = Math.cos(angularDist) - Math.sin(lat1) * Math.sin(lat2);
-    let lon2 = lon1 + Math.atan2(y, x);
-    lon2 = ((lon2 + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
-
-    return {latitude: toDeg(lat2), longitude: toDeg(lon2)};
 }
