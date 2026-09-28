@@ -11,9 +11,9 @@ import {Database} from 'sqlite';
 import {AbstractConnector} from './AbstractConnector';
 import {AbstractEntity} from '../entities/AbstractEntity';
 import {Vehicle} from '../entities/Vehicle';
-import {LatLonPosition} from '../Types';
+import {LatLonPosition, SimulatorDetails} from '../Types';
 import {PositionRecord, RouteRecord, SqliteConnector, StatusRecord} from './SqliteConnector';
-import {PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
+import {DetailsEvent, PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
 
 const MAX_POSITIONS = 5000;
 const MAX_STATUSES = 500;
@@ -26,6 +26,7 @@ export interface VehicleSummary {
     status: number | null;
     position: LatLonPosition | null;
     route: LatLonPosition[];
+    details: SimulatorDetails | null;
     updatedAt: number;
 }
 
@@ -35,7 +36,7 @@ export interface VehicleHistory {
     routes: RouteRecord[];
 }
 
-export type LiveUpdateListener = (type: 'position' | 'status' | 'route' | 'reload', data: object) => void;
+export type LiveUpdateListener = (type: 'position' | 'status' | 'route' | 'details' | 'reload', data: object) => void;
 
 export class LiveStateConnector extends AbstractConnector {
     private states: Map<string, VehicleSummary> = new Map<string, VehicleSummary>();
@@ -116,12 +117,14 @@ export class LiveStateConnector extends AbstractConnector {
             status: null,
             position: entity.getPosition(),
             route: [],
+            details: null,
             updatedAt: Date.now(),
         };
         if (entity instanceof Vehicle) {
             state.simulator = entity.getSimulatorName();
             state.status = entity.getStatus();
             state.route = entity.getRoute();
+            state.details = entity.getDetails();
             // A RouteSimulator fetches its route during setup(), before connectors are attached.
             if (state.route.length > 0) {
                 this.store.onEntityRouteUpdate(new RouteEvent(entity, state.route));
@@ -165,6 +168,15 @@ export class LiveStateConnector extends AbstractConnector {
         state.route = event.getRoute();
         state.updatedAt = Date.now();
         this.publish('route', {id: state.id, route: state.route, timestamp: state.updatedAt});
+    }
+
+    override async onEntityDetailsUpdate(event: DetailsEvent): Promise<void> {
+        const state = this.states.get(event.getSource().getId());
+        if (!state) {
+            return;
+        }
+        state.details = event.getDetails();
+        this.publish('details', {id: state.id, details: state.details, timestamp: Date.now()});
     }
 
     private publish(type: Parameters<LiveUpdateListener>[0], data: object): void {

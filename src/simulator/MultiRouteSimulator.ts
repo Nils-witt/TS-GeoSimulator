@@ -57,8 +57,13 @@ export abstract class MultiRouteSimulator<O extends MultiRouteSimulatorOptions> 
     /**
      * Drives a leg from start to end. Resolves once it finished, or immediately if the simulator was stopped
      * or there is no route to drive (identical points or the route could not be fetched).
+     * `onDepart` receives the estimated arrival time once the route is known.
      */
-    protected async runLeg(start: LatLonPosition, end: LatLonPosition): Promise<void> {
+    protected async runLeg(
+        start: LatLonPosition,
+        end: LatLonPosition,
+        onDepart?: (arrivalAt: number) => void,
+    ): Promise<void> {
         const leg = await this.prepareLeg(start, end);
         if (!leg) {
             return;
@@ -67,6 +72,7 @@ export abstract class MultiRouteSimulator<O extends MultiRouteSimulatorOptions> 
             leg.start();
             return;
         }
+        onDepart?.(Date.now() + leg.estimateRemainingMs());
         return new Promise<void>((resolve) => {
             leg.on('routeFinished', () => resolve());
             leg.start();

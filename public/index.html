@@ -205,6 +205,22 @@
             tr.active {
                 background: var(--selected);
             }
+            .phase-bar {
+                grid-column: 1 / -1;
+                height: 4px;
+                border-radius: 2px;
+                background: var(--border);
+                overflow: hidden;
+            }
+            .phase-bar > div {
+                height: 100%;
+                background: var(--accent);
+                transition: width 1s linear;
+            }
+            .place-link {
+                color: var(--accent);
+                cursor: pointer;
+            }
             .toolbar {
                 display: flex;
                 gap: 12px;
@@ -448,6 +464,7 @@
             }).addTo(map);
             const trailLayer = L.polyline([], {color: '#2563eb', weight: 3, opacity: 0.6, dashArray: '4 6'}).addTo(map);
             const historicRouteLayer = L.polyline([], {color: '#a855f7', weight: 5, opacity: 0.8}).addTo(map);
+            const placesLayer = L.layerGroup().addTo(map); // places of the selected vehicle's simulator
 
             const $ = (id) => document.getElementById(id);
             const esc = (s) =>
@@ -465,6 +482,12 @@
                 const m = Math.floor(s / 60);
                 if (m < 60) return `${m}m ${s % 60}s`;
                 return `${Math.floor(m / 60)}h ${m % 60}m`;
+            };
+            // Elements with data-countdown / data-elapsed / data-progress-* are refreshed every second, see tick().
+            const countdown = (ts) => `<span data-countdown="${ts}">${fmtCountdown(ts)}</span>`;
+            const fmtCountdown = (ts) => {
+                const ms = ts - Date.now();
+                return ms > 0 ? `in ${fmtDuration(ms)}` : 'now';
             };
             const fmtDistance = (m) => (m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`);
             function routeLength(route) {
@@ -521,12 +544,29 @@
                 }
             }
 
+            function updatePlaces() {
+                placesLayer.clearLayers();
+                const places = vehicles.get(selectedId)?.details?.places ?? {};
+                for (const [label, p] of Object.entries(places)) {
+                    L.circleMarker([p.latitude, p.longitude], {
+                        radius: 7,
+                        weight: 3,
+                        color: label === 'Emergency' ? '#dc2626' : '#2563eb',
+                        fillColor: '#fff',
+                        fillOpacity: 1,
+                    })
+                        .bindTooltip(esc(label), {direction: 'top', offset: [0, -6]})
+                        .addTo(placesLayer);
+                }
+            }
+
             function updateOverlays() {
                 const trail = showTrail && history ? history.positions.filter((p) => p.latitude != null) : [];
                 trailLayer.setLatLngs(toLatLngs(trail));
                 const hist = history && shownRouteIndex != null ? history.routes[shownRouteIndex] : null;
                 historicRouteLayer.setLatLngs(hist ? toLatLngs(hist.route) : []);
                 if (hist) historicRouteLayer.bringToFront();
+                updatePlaces();
             }
 
             // --- Sidebar ---
@@ -545,7 +585,12 @@
                             <span class="badge" style="background:${info.color}" title="${esc(info.label)}">${v.status ?? '?'}</span>
                             <span>
                                 <div class="v-name">${esc(v.name)}</div>
-                                <div class="v-sub">${esc(info.label)} · ${esc(v.simulator ?? '')}</div>
+                                <div class="v-sub">${
+                                    // The badge already shows the status; the phase is more specific.
+                                    v.details
+                                        ? `${esc(v.details.phase)}${v.details.phaseEndsAt ? ` · ${countdown(v.details.phaseEndsAt)}` : ''}`
+                                        : `${esc(info.label)} · ${esc(v.simulator ?? '')}`
+                                }</div>
                             </span>
                         </li>`;
                     })
@@ -617,6 +662,7 @@
                         <dt>Route</dt><dd>${v.route?.length ?? 0} points · ${remaining}</dd>
                         <dt>Updated</dt><dd>${fmtDateTime(v.updatedAt)}</dd>
                     </dl>
+                    ${renderSimulation(v.details)}
                     <div class="toolbar">
                         <button class="btn" data-action="clear-history" ${history ? '' : 'disabled'}>Clear history</button>
                     </div>
@@ -630,7 +676,53 @@
                     </div>
                     ${body}`;
             }
+            function renderSimulation(d) {
+                if (!d) return '';
+                const {phase, phaseStartedAt: from, phaseEndsAt: to} = d;
+                const pct = to ? Math.min(100, ((Date.now() - from) / (to - from)) * 100) : 0;
+                const places = Object.entries(d.places)
+                    .map(
+                        ([label, p]) =>
+                            `<dt>${esc(label)}</dt><dd><span class="place-link" data-lat="${p.latitude}" data-lon="${p.longitude}">${fmtCoord(p)}</span></dd>`,
+                    )
+                    .join('');
+                const stats = Object.entries(d.stats)
+                    .map(([label, value]) => `<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`)
+                    .join('');
+                return `
+                    <div class="section-title">Simulation</div>
+                    <dl>
+                        <dt>Phase</dt><dd>${esc(phase)}</dd>
+                        <dt>Since</dt><dd>${fmtTime(from)} · <span data-elapsed="${from}">${fmtDuration(Date.now() - from)}</span></dd>
+                        ${to ? `<dt>Ends</dt><dd>${fmtTime(to)} · ${countdown(to)}</dd>` : ''}
+                        ${to ? `<div class="phase-bar"><div data-progress-start="${from}" data-progress-end="${to}" style="width:${pct}%"></div></div>` : ''}
+                        ${places}
+                        ${stats}
+                    </dl>`;
+            }
+
+            function tick() {
+                const now = Date.now();
+                for (const el of document.querySelectorAll('[data-countdown]')) {
+                    el.textContent = fmtCountdown(Number(el.dataset.countdown));
+                }
+                for (const el of document.querySelectorAll('[data-elapsed]')) {
+                    el.textContent = fmtDuration(now - Number(el.dataset.elapsed));
+                }
+                for (const el of document.querySelectorAll('[data-progress-end]')) {
+                    const from = Number(el.dataset.progressStart);
+                    const to = Number(el.dataset.progressEnd);
+                    el.style.width = `${Math.min(100, ((now - from) / (to - from)) * 100)}%`;
+                }
+            }
+            setInterval(tick, 1000);
+
             $('detail').addEventListener('click', (e) => {
+                const place = e.target.closest('.place-link');
+                if (place) {
+                    map.panTo([Number(place.dataset.lat), Number(place.dataset.lon)]);
+                    return;
+                }
                 const tab = e.target.closest('button[data-tab]');
                 if (tab) {
                     activeTab = tab.dataset.tab;
@@ -745,6 +837,10 @@
                     v.status = data.status;
                     if (selected && history) history.statuses.push(data);
                     renderList();
+                } else if (type === 'details') {
+                    v.details = data.details;
+                    renderList();
+                    if (selected) updatePlaces();
                 } else if (type === 'route') {
                     v.route = data.route;
                     if (selected && history) history.routes.push({route: data.route, timestamp: data.timestamp});
@@ -888,10 +984,11 @@
              */
             async function fetchStored() {
                 const results = await Promise.all(
-                    ['api/connectors', 'api/connectors/types', 'api/vehicles/configs', 'api/vehicles/types'].map((url) =>
-                        fetch(url)
-                            .then((res) => (res.ok ? res.json() : null))
-                            .catch(() => null),
+                    ['api/connectors', 'api/connectors/types', 'api/vehicles/configs', 'api/vehicles/types'].map(
+                        (url) =>
+                            fetch(url)
+                                .then((res) => (res.ok ? res.json() : null))
+                                .catch(() => null),
                     ),
                 );
                 if (results.includes(null)) {

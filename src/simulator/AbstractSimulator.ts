@@ -1,8 +1,8 @@
-import {LatLonPosition} from '../Types';
+import {LatLonPosition, SimulatorDetails} from '../Types';
 import {UUID} from 'crypto';
 import {randomUUID} from 'node:crypto';
 import {Emitter} from '../utils/Emitter';
-import {PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
+import {DetailsEvent, PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
 
 export abstract class AbstractSimulator extends Emitter {
     private position: LatLonPosition | null = null;
@@ -10,6 +10,7 @@ export abstract class AbstractSimulator extends Emitter {
     private status = 6;
 
     private route: LatLonPosition[] = [];
+    private details: SimulatorDetails | null = null;
 
     constructor(id: UUID = randomUUID()) {
         super();
@@ -42,6 +43,15 @@ export abstract class AbstractSimulator extends Emitter {
 
     public getStatus(): number {
         return this.status;
+    }
+
+    public getDetails(): SimulatorDetails | null {
+        return this.details;
+    }
+
+    protected setDetails(details: SimulatorDetails): void {
+        this.details = details;
+        this.emit(new DetailsEvent(this, details));
     }
 
     abstract start(): void;

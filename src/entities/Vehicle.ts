@@ -2,8 +2,8 @@ import {UUID} from 'crypto';
 import {AbstractEntity} from './AbstractEntity';
 import {ApplicationLogger} from '../utils/Logger';
 import {AbstractSimulator} from '../simulator/AbstractSimulator';
-import {LatLonPosition} from '../Types';
-import {PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
+import {LatLonPosition, SimulatorDetails} from '../Types';
+import {DetailsEvent, PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
 
 export class Vehicle extends AbstractEntity {
     private simulator: AbstractSimulator;
@@ -17,6 +17,9 @@ export class Vehicle extends AbstractEntity {
         });
         this.simulator.on('statusUpdate', (event) => {
             this.setStatus((event as StatusEvent<AbstractSimulator>).getStatus());
+        });
+        this.simulator.on('detailsUpdate', (event) => {
+            this.emit(new DetailsEvent(this, (event as DetailsEvent<AbstractSimulator>).getDetails()));
         });
         this.simulator.on('routeUpdate', (event) => {
             this.emit(new RouteEvent(this, (event as RouteEvent<AbstractSimulator>).getRoute()));
@@ -71,6 +74,10 @@ export class Vehicle extends AbstractEntity {
 
     public getSimulatorName(): string {
         return this.simulator.constructor.name;
+    }
+
+    public getDetails(): SimulatorDetails | null {
+        return this.simulator.getDetails();
     }
 
     public getRoute(): LatLonPosition[] {

@@ -1,6 +1,6 @@
 import {AbstractEntity} from '../entities/AbstractEntity';
 import {UUID} from 'crypto';
-import {PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
+import {DetailsEvent, PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
 
 export abstract class AbstractConnector {
     private id: string;
@@ -22,6 +22,11 @@ export abstract class AbstractConnector {
 
     abstract onEntityRouteUpdate(event: RouteEvent): Promise<void>;
 
+    /** Simulator details are only shown in the web UI; other connectors ignore them. */
+    onEntityDetailsUpdate(_event: DetailsEvent): Promise<void> {
+        return Promise.resolve();
+    }
+
     attachEntity(entity: AbstractEntity): void {
         if (this.entities.has(entity.getId())) {
             return;
@@ -38,6 +43,9 @@ export abstract class AbstractConnector {
         });
         entity.on('routeUpdate', (event) => {
             if (attached()) this.onEntityRouteUpdate(event as RouteEvent);
+        });
+        entity.on('detailsUpdate', (event) => {
+            if (attached()) this.onEntityDetailsUpdate(event as DetailsEvent);
         });
     }
 

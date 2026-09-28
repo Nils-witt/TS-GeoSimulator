@@ -6,7 +6,7 @@
  */
 
 import type {AbstractEntity} from '../entities/AbstractEntity';
-import {LatLonPosition, TimedLatLonPosition} from '../Types';
+import {LatLonPosition, SimulatorDetails, TimedLatLonPosition} from '../Types';
 
 abstract class SourceEvent<S> extends Event {
     private source: S;
@@ -57,6 +57,19 @@ export class RouteEvent<S = AbstractEntity> extends SourceEvent<S> {
 
     getRoute(): LatLonPosition[] {
         return this.route;
+    }
+}
+
+export class DetailsEvent<S = AbstractEntity> extends SourceEvent<S> {
+    private details: SimulatorDetails;
+
+    constructor(source: S, details: SimulatorDetails) {
+        super('detailsUpdate', source);
+        this.details = details;
+    }
+
+    getDetails(): SimulatorDetails {
+        return this.details;
     }
 }
 

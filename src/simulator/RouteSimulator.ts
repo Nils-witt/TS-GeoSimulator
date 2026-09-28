@@ -37,7 +37,7 @@ export class RouteSimulator extends AbstractSimulator {
     private options: Required<RouteSimulatorOptions>;
     private timer: NodeJS.Timeout | null = null;
     private currentIndex = 0;
-    private remainingDistanceInSegment = 0; // meters
+    private distanceIntoSegment = 0; // meters travelled from route[currentIndex] towards the next point
 
     constructor(options: RouteSimulatorOptions) {
         super();
@@ -91,12 +91,13 @@ export class RouteSimulator extends AbstractSimulator {
             return;
         }
         this.currentIndex = 0;
-        this.remainingDistanceInSegment = 0;
+        this.distanceIntoSegment = 0;
         this.setPosition(this.getRoute()[0]);
 
         ApplicationLogger.info('Starting simulation.', {service: this.constructor.name, id: this.getId()});
 
         this.timer = setInterval(() => this.tick(), this.options.updateIntervalMs);
+        this.describe('Driving', Date.now() + this.estimateRemainingMs());
     }
 
     stop(): void {
@@ -169,52 +170,68 @@ export class RouteSimulator extends AbstractSimulator {
         this.setRoute([]);
     }
 
+    /** Simulated driving time for the remaining route. */
+    estimateRemainingMs(): number {
+        const route = this.getRoute();
+        let distance = -this.distanceIntoSegment;
+        for (let i = this.currentIndex; i < route.length - 1; i++) {
+            distance += haversineDistance(route[i], route[i + 1]);
+        }
+        const ticks = Math.ceil(Math.max(0, distance) / this.stepMeters());
+        return ticks * this.options.updateIntervalMs;
+    }
+
+    private stepMeters(): number {
+        return this.options.speedMps * (this.options.updateIntervalMs / 1000);
+    }
+
+    private describe(phase: string, phaseEndsAt: number | null): void {
+        this.setDetails({
+            phase,
+            phaseStartedAt: Date.now(),
+            phaseEndsAt,
+            places: {Destination: this.endPos},
+            stats: {Speed: `${Math.round(this.options.speedMps * 3.6)} km/h`},
+        });
+    }
+
+    /** Moves `speed × interval` meters along the route, passing as many route points as needed. */
     private tick(): void {
-        if (!this.getRoute() || this.currentIndex >= this.getRoute().length - 1) {
+        const route = this.getRoute();
+        if (this.currentIndex >= route.length - 1) {
             this.stop();
             return;
         }
 
-        const from = this.getRoute()[this.currentIndex];
-        const to = this.getRoute()[this.currentIndex + 1];
-        const segmentDist = haversineDistance(from, to);
-
-        const step = this.options.speedMps * (this.options.updateIntervalMs / 1000);
-
-        if (this.remainingDistanceInSegment <= 0) {
-            this.remainingDistanceInSegment = segmentDist;
+        let budget = this.stepMeters();
+        while (this.currentIndex < route.length - 1) {
+            const from = route[this.currentIndex];
+            const to = route[this.currentIndex + 1];
+            const left = haversineDistance(from, to) - this.distanceIntoSegment;
+            if (budget < left) {
+                this.distanceIntoSegment += budget;
+                this.setPosition(offsetPosition(from, this.distanceIntoSegment, bearingBetween(from, to)));
+                return;
+            }
+            budget -= left;
+            this.currentIndex++;
+            this.distanceIntoSegment = 0;
         }
 
-        if (step >= this.remainingDistanceInSegment) {
-            // move to next waypoint
-            this.currentIndex++;
-            this.setPosition(this.getRoute()[this.currentIndex]);
-            this.remainingDistanceInSegment = 0;
-            // if reached end
-            if (this.currentIndex >= this.getRoute().length - 1) {
-                if (this.options.loop) {
-                    ApplicationLogger.info('Looping route simulation back to start.', {
-                        service: this.constructor.name,
-                        id: this.getId(),
-                    });
-                    this.currentIndex = 0;
-                    this.setPosition(this.getRoute()[0]);
-                    return;
-                }
-                ApplicationLogger.info('Route simulation finished.', {
-                    service: this.constructor.name,
-                    id: this.getId(),
-                });
-                this.emit(new RouteFinishedEvent());
-                this.stop();
-            }
+        // Reached the end of the route.
+        this.setPosition(route[route.length - 1]);
+        if (this.options.loop) {
+            ApplicationLogger.info('Looping route simulation back to start.', {
+                service: this.constructor.name,
+                id: this.getId(),
+            });
+            this.currentIndex = 0;
+            this.setPosition(route[0]);
             return;
         }
-
-        // interpolate along bearing
-        const bearing = bearingBetween(from, to);
-        const newPos = offsetPosition(from, step, bearing);
-        this.remainingDistanceInSegment -= step;
-        this.setPosition(newPos);
+        ApplicationLogger.info('Route simulation finished.', {service: this.constructor.name, id: this.getId()});
+        this.describe('Arrived', null);
+        this.emit(new RouteFinishedEvent());
+        this.stop();
     }
 }
