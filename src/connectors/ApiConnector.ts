@@ -1,9 +1,10 @@
 /*
  * ApiConnector.ts
  * ---------------
- * Remote API client used to load map styles, overlays and named objects from server.
- * Exports: ApiConnector singleton
- * Purpose: wrap fetch calls and present a StorageInterface-like API to the app.
+ * Client for the go-unit-mangement JSON API (see api/openapi.yaml of that project).
+ * Exports: ApiConnector
+ * Purpose: load and create units, push simulated positions via PATCH /api/units/{id}
+ * and keep the local unit cache in sync through the /api/units/events stream.
  */
 
 import {Unit} from '../entities/Unit';
@@ -12,31 +13,70 @@ import {EntityRouteEvent} from "../events/EntityRouteEvent";
 import {EntityStatusEvent} from "../events/EntityStatusEvent";
 import {AbstractConnector} from "./AbstractConnector";
 import {randomUUID} from "node:crypto";
-import {WebSocketConnector} from "./WebSocketConnector";
 import {ApplicationLogger} from "../utils/Logger";
 import {UUID} from "crypto";
+import {LatLonPosition, TimedLatLonPosition} from "../Types";
 
+interface ApiPosition {
+    lat: number;
+    lon: number;
+    height?: number | null;
+    timestamp?: string | null;
+}
+
+interface ApiUnit {
+    id: string;
+    name: string;
+    position: ApiPosition | null;
+    symbol: Record<string, string> | null;
+    tacticalName: Record<string, string> | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
+interface ApiLoginResponse {
+    token: string;
+    tokenType: 'Bearer';
+    expiresAt: string;
+}
 
 export class ApiConnector extends AbstractConnector {
 
+    private apiUrl: string;
+    private apiToken: string;
     private units: Record<string, Unit> = {};
 
-    async connect(): Promise<void> {
+    private eventSocket: WebSocket | null = null;
+    private reconnectTimer: NodeJS.Timeout | null = null;
+
+    // Position updates are sent one request at a time per unit; newer positions replace queued ones.
+    private pendingPositions: Map<string, ApiPosition | null> = new Map<string, ApiPosition | null>();
+    private positionsInFlight: Set<string> = new Set<string>();
+
+    constructor(apiUrl: string, apiToken: string) {
+        super(randomUUID());
+        // Accept both the server root and the /api base as configured URL.
+        this.apiUrl = apiUrl.replace(/\/+$/, '').replace(/\/api$/, '') + '/api';
+        this.apiToken = apiToken;
+    }
+
+    connect(): void {
         ApplicationLogger.info("Connecting ApiConnector...", {service: this.constructor.name, id: this.getId()});
-        await this.websocketConnector.setup();
     }
 
     disconnect(): void {
         ApplicationLogger.info("Disconnecting ApiConnector...", {service: this.constructor.name, id: this.getId()});
-        this.websocketConnector.disconnect();
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+        this.eventSocket?.close();
+        this.eventSocket = null;
     }
 
     async setup(): Promise<void> {
-        await Promise.all([
-            this.websocketConnector.setup(),
-            this.loadAllUnits()
-        ])
-
+        await this.loadAllUnits();
+        this.connect();
     }
 
     public override lookUpEntityUUID(name: string): UUID | null {
@@ -49,83 +89,52 @@ export class ApiConnector extends AbstractConnector {
     }
 
     async onEntityPositionUpdate(event: EntityPositionUpdateEvent): Promise<void> {
-        await this.websocketConnector.onEntityPositionUpdate(event);
+        const position = event.getPosition();
+        await this.queuePositionUpdate(event.getEntity().getId(), position ? this.toApiPosition(position) : null);
     }
 
     async onEntityStatusUpdate(event: EntityStatusEvent): Promise<void> {
-        await this.websocketConnector.onEntityStatusUpdate(event);
+        // The API has no unit status field.
+        ApplicationLogger.debug(`Ignoring status update ${event.getStatus()} for ${event.getEntity().getId()}`, {
+            service: this.constructor.name,
+            id: this.getId()
+        });
+        return Promise.resolve();
     }
 
     async onEntityRouteUpdate(event: EntityRouteEvent): Promise<void> {
-        await this.websocketConnector.onEntityRouteUpdate(event);
+        // The API has no unit route field.
+        ApplicationLogger.debug(`Ignoring route update for ${event.getEntity().getId()}`, {
+            service: this.constructor.name,
+            id: this.getId()
+        });
+        return Promise.resolve();
     }
-
-    private apiUrl: string;
-    private apiToken: string;
-    private websocketConnector: WebSocketConnector;
-
-    constructor(apiUrl: string, apiToken: string) {
-        const id = randomUUID()
-        super(id);
-        this.apiUrl = apiUrl;
-        this.apiToken = apiToken;
-        this.websocketConnector = new WebSocketConnector(apiUrl.replace('http', 'ws') + '/ws/', apiToken, true, id);
-    }
-
 
     public async testLogin(): Promise<boolean> {
-        const url = this.apiUrl + '/token/verify/';
-        const myHeaders = new Headers();
-        myHeaders.append('Content-Type', 'application/json');
-
-        const data = {
-            token: this.apiUrl
-        };
-        const requestOptions = {
-            method: 'POST',
-            headers: myHeaders,
-            body: JSON.stringify(data)
-        };
         try {
-            const res = await fetch(url, requestOptions);
-            return res.ok
+            await this.callApi('/auth/me', 'GET');
+            return true;
         } catch (e) {
-            console.error('Error preparing request options:', e);
+            ApplicationLogger.warn(`Token verification failed: ${e}`, {service: this.constructor.name, id: this.getId()});
             return false;
         }
     }
 
-
     public async login(username: string, password: string): Promise<string> {
-        const url = this.apiUrl + '/token/';
-        const myHeaders = new Headers();
-        myHeaders.append('Content-Type', 'application/json');
-
-        const raw = JSON.stringify({username, password});
-
-        const requestOptions = {
-            method: 'POST',
-            headers: myHeaders,
-            body: raw
-        };
-
-        try {
-            const res = await fetch(url, requestOptions);
-            if (res.ok) {
-                const data: { access: string } = await res.json() as { access: string };
-                return data.access
-            } else {
-                throw new Error(`HTTP error! status: ${res.status}`);
-            }
-        } catch (e) {
-            console.error('Error preparing request options:', e);
-            throw e;
-        }
+        const data = await this.callApi('/auth/login', 'POST', {username, password}, false) as ApiLoginResponse;
+        this.apiToken = data.token;
+        return data.token;
     }
 
-    private async callApi(url: string, method: string, headers: Headers = new Headers(), body?: object): Promise<object | null> {
+    public async logout(): Promise<void> {
+        await this.callApi('/auth/logout', 'POST');
+        this.apiToken = '';
+    }
 
-        if (this.apiToken) {
+    private async callApi(path: string, method: string, body?: object, authenticate = true): Promise<object | null> {
+        const headers = new Headers();
+        if (authenticate && this.apiToken) {
             headers.append('Authorization', `Bearer ${this.apiToken}`);
         }
 
@@ -138,70 +147,96 @@ export class ApiConnector extends AbstractConnector {
             headers.append('Content-Type', 'application/json');
         }
 
-        const response = await fetch(url, requestOptions);
+        const response = await fetch(this.apiUrl + path, requestOptions);
         if (!response.ok) {
-            console.log(await response.text())
-
-            throw new Error(`HTTP error! status: ${response.status}`);
+            let message = response.statusText;
+            try {
+                message = (await response.json() as { error: string }).error;
+            } catch {
+                // Body is not the documented {"error": "..."} object.
+            }
+            throw new Error(`${method} ${path} failed with status ${response.status}: ${message}`);
         }
+        if (response.status === 204) {
+            return null;
+        }
+        return await response.json() as object;
+    }
+
+    public async fetchData(path: string): Promise<object | null> {
+        return this.callApi(path, 'GET');
+    }
+
+    async loadUnit(id: string): Promise<Unit | null> {
         try {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-            return await response.json();
+            const unit = this.toUnit(await this.callApi(`/units/${id}`, 'GET') as ApiUnit);
+            this.units[id] = unit;
+            return unit;
         } catch (e) {
-            console.error('Error parsing JSON:', e);
+            ApplicationLogger.error(`Error loading unit ${id}: ${e}`, {service: this.constructor.name, id: this.getId()});
             return null;
         }
     }
 
-    public async fetchData(url: string): Promise<object | null> {
-        return this.callApi(url, 'GET');
-    }
-
-
-    loadUnit(id: string): Promise<Unit | null> {
-        throw new Error('loadMapGroup not implemented: ' + id);
-    }
-
-    loadAllUnits(): Promise<Record<string, Unit>> {
-        return new Promise<Record<string, Unit>>(resolve => {
-            const units: Record<string, Unit> = {};
-            const url = this.apiUrl + '/units/';
-
-            this.fetchData(url)
-                .then(data => {
-                    for (const rawUnit of data as {
-                        id: string,
-                        name: string,
-                    }[]) {
-                        units[rawUnit.id] = Unit.of({
-                            id: rawUnit.id,
-                            name: rawUnit.name,
-                        });
-                    }
-                    this.units = units;
-                    resolve(units);
-                })
-                .catch(e => {
-                    console.error('Error fetching overlay layers:', e);
-                });
-        });
+    async loadAllUnits(): Promise<Record<string, Unit>> {
+        const units: Record<string, Unit> = {};
+        try {
+            for (const rawUnit of await this.callApi('/units', 'GET') as ApiUnit[]) {
+                units[rawUnit.id] = this.toUnit(rawUnit);
+            }
+            this.units = units;
+        } catch (e) {
+            ApplicationLogger.error(`Error fetching units: ${e}`, {service: this.constructor.name, id: this.getId()});
+        }
+        return units;
     }
 
     async saveUnit(unit: Unit): Promise<Unit> {
-
-        const res = await this.callApi(this.apiUrl + '/units/', 'POST', new Headers(), unit.record());
-        return Unit.of(res as {
-            id: string,
-            name: string,
-        });
+        const id = unit.getId();
+        // PATCH for existing units, so that position, symbol and tactical name are kept.
+        const res = id
+            ? await this.callApi(`/units/${id}`, 'PATCH', {name: unit.getName()})
+            : await this.callApi('/units', 'POST', {name: unit.getName()});
+        const saved = this.toUnit(res as ApiUnit);
+        this.units[saved.getId() as string] = saved;
+        return saved;
     }
 
-    replaceUnits(units: Unit[]): Promise<void> {
-        throw new Error('Not Available on this Provider : replaceUnits ' + units.length);
+    private async queuePositionUpdate(unitId: string, position: ApiPosition | null): Promise<void> {
+        this.pendingPositions.set(unitId, position);
+        if (this.positionsInFlight.has(unitId)) {
+            return;
+        }
+        this.positionsInFlight.add(unitId);
+        try {
+            while (this.pendingPositions.has(unitId)) {
+                const next = this.pendingPositions.get(unitId) ?? null;
+                this.pendingPositions.delete(unitId);
+                try {
+                    await this.callApi(`/units/${unitId}`, 'PATCH', {position: next});
+                } catch (e) {
+                    console.log(e)
+                    ApplicationLogger.error(`Error updating position of unit ${unitId}: ${e}`, {
+                        service: this.constructor.name,
+                        id: this.getId()
+                    });
+                }
+            }
+        } finally {
+            this.positionsInFlight.delete(unitId);
+        }
     }
 
-    deleteUnit(id: string): Promise<void> {
-        throw new Error(`Method not implemented. deleteUnit: ${id}`);
+    private toUnit(raw: ApiUnit): Unit {
+        return Unit.of({id: raw.id, name: raw.name});
+    }
+
+    private toApiPosition(position: LatLonPosition | TimedLatLonPosition): ApiPosition {
+        const apiPosition: ApiPosition = {lat: position.latitude, lon: position.longitude};
+        if ('timestamp' in position) {
+            apiPosition.timestamp = new Date(position.timestamp).toISOString();
+        }
+        return apiPosition;
     }
 
 }
