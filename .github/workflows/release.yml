@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  update_release_draft:
+    name: Update release draft
+    if: github.ref_type == 'branch'
+    permissions:
+      # Write permission is required to create a GitHub release
+      contents: write
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: release-drafter/release-drafter@v7
+
+  publish_release:
+    name: Publish release
+    if: github.ref_type == 'tag'
+    permissions:
+      # Write permission is required to publish a GitHub release
+      contents: write
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: release-drafter/release-drafter@v7
+        with:
+          # Override the Release name/tag/version with the actual tag name
+          name: ${{ github.ref_name }}
+          tag: ${{ github.ref_name }}
+          version: ${{ github.ref_name }}
+          publish: true
