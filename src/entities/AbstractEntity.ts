@@ -1,13 +1,13 @@
 import {UUID} from 'crypto';
 import {EventListener, LatLonPosition, TimedLatLonPosition} from '../Types';
-import {AbstractSimulator} from "../simulator/AbstractSimulator";
-import {EntityPositionUpdateEvent} from "../events/EntityPositionUpdateEvent";
+import {AbstractSimulator} from '../simulator/AbstractSimulator';
+import {EntityPositionUpdateEvent} from '../events/EntityPositionUpdateEvent';
 
 export function offsetPosition(
     latLon: LatLonPosition,
     distanceMeters: number,
     bearingDeg: number,
-    earthRadiusMeters = 6371000
+    earthRadiusMeters = 6371000,
 ): LatLonPosition {
     const toRad = (d: number) => (d * Math.PI) / 180;
     const toDeg = (r: number) => (r * 180) / Math.PI;
@@ -30,7 +30,6 @@ export function offsetPosition(
     return {latitude: toDeg(lat2), longitude: toDeg(lon2)};
 }
 
-
 export abstract class AbstractEntity {
     protected id: UUID;
     protected createdAt: Date;
@@ -39,7 +38,7 @@ export abstract class AbstractEntity {
     private name: string;
     private listeners = new Map<string, EventListener[]>();
 
-    constructor(id: UUID,name: string) {
+    constructor(id: UUID, name: string) {
         this.id = id;
         this.name = name;
         this.createdAt = new Date();
@@ -70,7 +69,6 @@ export abstract class AbstractEntity {
 
     abstract setup(simulator: AbstractSimulator): Promise<void>;
 
-
     setPosition(position: LatLonPosition | TimedLatLonPosition | null): void {
         this.position = position;
         this.emit(new EntityPositionUpdateEvent(this, position));
@@ -87,5 +85,4 @@ export abstract class AbstractEntity {
     getName(): string {
         return this.name;
     }
-
 }

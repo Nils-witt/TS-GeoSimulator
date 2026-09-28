@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: ['main', 'dev']
   pull_request:
-    branches: [ "main" ]
+    branches: ['main']
 
 permissions:
   contents: read
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   lint-and-build:
-    name: Lint & type-check
+    name: Format, lint & type-check
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -36,6 +36,11 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
 
+      - name: Check formatting
+        id: format
+        continue-on-error: true
+        run: npx prettier --check .
+
       - name: Run oxlint
         id: lint
         continue-on-error: true
@@ -51,6 +56,12 @@ jobs:
 
       - name: Type-check
         run: npx tsc --noEmit
+
+      - name: Fail on formatting issues
+        if: steps.format.outcome == 'failure'
+        run: |
+          echo "::error::Files are not formatted with Prettier. Run 'npm run format' locally."
+          exit 1
 
       - name: Fail on lint errors
         if: steps.lint.outcome == 'failure'

@@ -1,7 +1,6 @@
-import {LatLonPosition} from "../Types";
+import {LatLonPosition} from '../Types';
 
 export class SimulatorRouteEvent extends Event {
-
     private route: LatLonPosition[];
 
     constructor(route: LatLonPosition[]) {

@@ -17,11 +17,10 @@ export class Unit extends Entity {
 
     public static of(data: DBRecord): Unit {
         return new Unit({
-            id: data.id ? data.id as string : undefined,
-            name: data.name as string
+            id: data.id ? (data.id as string) : undefined,
+            name: data.name as string,
         });
     }
-
 
     record(): DBRecord {
         const record: DBRecord = {};
@@ -36,11 +35,9 @@ export class Unit extends Entity {
         return this.id;
     }
 
-
     public getName(): string {
         return this.name;
     }
-
 
     public setName(name: string): void {
         this.name = name;

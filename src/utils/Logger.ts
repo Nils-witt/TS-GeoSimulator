@@ -1,9 +1,9 @@
 import winston, {createLogger, format} from 'winston';
-import {getFormattedDate} from "./Helpers";
+import {getFormattedDate} from './Helpers';
 
 const myFormat = format.printf((info) => {
-    const service = info.service as string || 'General';
-    const id = info.id as string || 'N/A';
+    const service = (info.service as string) || 'General';
+    const id = (info.id as string) || 'N/A';
     return `${getFormattedDate()} [${info.level.padEnd(6, ' ')}] [${service.padEnd(20, ' ').substring(0, 20)}] [${id.padEnd(36, ' ').substring(0, 36)}] ${info.message as string}`;
 });
 
@@ -21,8 +21,10 @@ export const ApplicationLogger = createLogger({
 // If we're not in production then log to the `console`
 //
 if (process.env.NODE_ENV !== 'production') {
-    ApplicationLogger.add(new winston.transports.Console({
-        format: myFormat,
-        level: 'info',
-    }));
+    ApplicationLogger.add(
+        new winston.transports.Console({
+            format: myFormat,
+            level: 'info',
+        }),
+    );
 }

@@ -1,13 +1,11 @@
 import {EventListener, LatLonPosition} from '../Types';
-import {UUID} from "crypto";
-import {randomUUID} from "node:crypto";
-import {SimulatorPositionUpdateEvent} from "../events/SimulatorPositionUpdateEvent";
-import {SimulatorStatusEvent} from "../events/SimulatorStatusEvent";
-import {SimulatorRouteEvent} from "../events/SimulatorRouteEvent";
-
+import {UUID} from 'crypto';
+import {randomUUID} from 'node:crypto';
+import {SimulatorPositionUpdateEvent} from '../events/SimulatorPositionUpdateEvent';
+import {SimulatorStatusEvent} from '../events/SimulatorStatusEvent';
+import {SimulatorRouteEvent} from '../events/SimulatorRouteEvent';
 
 export abstract class AbstractSimulator {
-
     private listeners = new Map<string, EventListener[]>();
     private position: LatLonPosition | null = null;
     private positionsHistory: Map<number, LatLonPosition | null> = new Map<number, LatLonPosition | null>();
@@ -20,7 +18,6 @@ export abstract class AbstractSimulator {
         this.id = id;
         /* empty */
     }
-
 
     on(eventName: string, listener: EventListener): void {
         if (!this.listeners.has(eventName)) {
@@ -79,7 +76,7 @@ export abstract class AbstractSimulator {
 
     abstract stop(): void;
 
-    abstract setup(): Promise<void>
+    abstract setup(): Promise<void>;
 
     public getId(): UUID {
         return this.id;

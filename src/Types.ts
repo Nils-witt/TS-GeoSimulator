@@ -9,7 +9,6 @@ export interface TimedLatLonPosition extends LatLonPosition {
     timestamp: number;
 }
 
-
 export interface ConfigType {
     vehicles: {
         name: string;
@@ -17,13 +16,13 @@ export interface ConfigType {
         id?: string;
         speed: number;
         movementType: string;
-        simulator: string,
+        simulator: string;
         data: Record<string, string | number | boolean | LatLonPosition>;
-        connectors: string[]
-    }[],
+        connectors: string[];
+    }[];
     connectors: {
         id: string;
         connector: string;
         data: Record<string, string | number | boolean>;
-    }[]
+    }[];
 }

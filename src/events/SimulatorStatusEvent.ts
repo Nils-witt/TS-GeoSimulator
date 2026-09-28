@@ -1,5 +1,4 @@
 export class SimulatorStatusEvent extends Event {
-
     private status: number;
 
     constructor(status: number) {

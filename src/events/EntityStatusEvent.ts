@@ -1,14 +1,13 @@
-import {AbstractEntity} from "../entities/AbstractEntity";
+import {AbstractEntity} from '../entities/AbstractEntity';
 
 export class EntityStatusEvent extends Event {
-
     private status: number;
     private entity: AbstractEntity;
 
     constructor(entity: AbstractEntity, status: number) {
         super('statusUpdate');
         this.status = status;
-        this.entity = entity
+        this.entity = entity;
     }
 
     getStatus(): number {

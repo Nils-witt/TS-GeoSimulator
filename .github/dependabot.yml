@@ -3,19 +3,19 @@
 
 version: 2
 updates:
-  - package-ecosystem: "npm"
-    directory: "/"
+  - package-ecosystem: 'npm'
+    directory: '/'
     schedule:
-      interval: "weekly"
+      interval: 'weekly'
     groups:
       # Bundle minor/patch bumps into a single PR; majors stay separate
       npm-minor-patch:
-        update-types: [ "minor", "patch" ]
+        update-types: ['minor', 'patch']
 
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  - package-ecosystem: 'github-actions'
+    directory: '/'
     schedule:
-      interval: "weekly"
+      interval: 'weekly'
     groups:
       github-actions:
-        patterns: [ "*" ]
+        patterns: ['*']

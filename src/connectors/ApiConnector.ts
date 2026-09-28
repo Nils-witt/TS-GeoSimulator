@@ -8,14 +8,14 @@
  */
 
 import {Unit} from '../entities/Unit';
-import {EntityPositionUpdateEvent} from "../events/EntityPositionUpdateEvent";
-import {EntityRouteEvent} from "../events/EntityRouteEvent";
-import {EntityStatusEvent} from "../events/EntityStatusEvent";
-import {AbstractConnector} from "./AbstractConnector";
-import {randomUUID} from "node:crypto";
-import {ApplicationLogger} from "../utils/Logger";
-import {UUID} from "crypto";
-import {LatLonPosition, TimedLatLonPosition} from "../Types";
+import {EntityPositionUpdateEvent} from '../events/EntityPositionUpdateEvent';
+import {EntityRouteEvent} from '../events/EntityRouteEvent';
+import {EntityStatusEvent} from '../events/EntityStatusEvent';
+import {AbstractConnector} from './AbstractConnector';
+import {randomUUID} from 'node:crypto';
+import {ApplicationLogger} from '../utils/Logger';
+import {UUID} from 'crypto';
+import {LatLonPosition, TimedLatLonPosition} from '../Types';
 
 interface ApiPosition {
     lat: number;
@@ -41,7 +41,6 @@ interface ApiLoginResponse {
 }
 
 export class ApiConnector extends AbstractConnector {
-
     private apiUrl: string;
     private apiToken: string;
     private units: Record<string, Unit> = {};
@@ -61,11 +60,11 @@ export class ApiConnector extends AbstractConnector {
     }
 
     connect(): void {
-        ApplicationLogger.info("Connecting ApiConnector...", {service: this.constructor.name, id: this.getId()});
+        ApplicationLogger.info('Connecting ApiConnector...', {service: this.constructor.name, id: this.getId()});
     }
 
     disconnect(): void {
-        ApplicationLogger.info("Disconnecting ApiConnector...", {service: this.constructor.name, id: this.getId()});
+        ApplicationLogger.info('Disconnecting ApiConnector...', {service: this.constructor.name, id: this.getId()});
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
@@ -97,7 +96,7 @@ export class ApiConnector extends AbstractConnector {
         // The API has no unit status field.
         ApplicationLogger.debug(`Ignoring status update ${event.getStatus()} for ${event.getEntity().getId()}`, {
             service: this.constructor.name,
-            id: this.getId()
+            id: this.getId(),
         });
         return Promise.resolve();
     }
@@ -106,7 +105,7 @@ export class ApiConnector extends AbstractConnector {
         // The API has no unit route field.
         ApplicationLogger.debug(`Ignoring route update for ${event.getEntity().getId()}`, {
             service: this.constructor.name,
-            id: this.getId()
+            id: this.getId(),
         });
         return Promise.resolve();
     }
@@ -116,13 +115,16 @@ export class ApiConnector extends AbstractConnector {
             await this.callApi('/auth/me', 'GET');
             return true;
         } catch (e) {
-            ApplicationLogger.warn(`Token verification failed: ${e}`, {service: this.constructor.name, id: this.getId()});
+            ApplicationLogger.warn(`Token verification failed: ${e}`, {
+                service: this.constructor.name,
+                id: this.getId(),
+            });
             return false;
         }
     }
 
     public async login(username: string, password: string): Promise<string> {
-        const data = await this.callApi('/auth/login', 'POST', {username, password}, false) as ApiLoginResponse;
+        const data = (await this.callApi('/auth/login', 'POST', {username, password}, false)) as ApiLoginResponse;
         this.apiToken = data.token;
         return data.token;
     }
@@ -140,7 +142,7 @@ export class ApiConnector extends AbstractConnector {
 
         const requestOptions: RequestInit = {
             method: method,
-            headers: headers
+            headers: headers,
         };
         if (body) {
             requestOptions['body'] = JSON.stringify(body);
@@ -151,7 +153,7 @@ export class ApiConnector extends AbstractConnector {
         if (!response.ok) {
             let message = response.statusText;
             try {
-                message = (await response.json() as { error: string }).error;
+                message = ((await response.json()) as {error: string}).error;
             } catch {
                 // Body is not the documented {"error": "..."} object.
             }
@@ -160,7 +162,7 @@ export class ApiConnector extends AbstractConnector {
         if (response.status === 204) {
             return null;
         }
-        return await response.json() as object;
+        return (await response.json()) as object;
     }
 
     public async fetchData(path: string): Promise<object | null> {
@@ -169,11 +171,14 @@ export class ApiConnector extends AbstractConnector {
 
     async loadUnit(id: string): Promise<Unit | null> {
         try {
-            const unit = this.toUnit(await this.callApi(`/units/${id}`, 'GET') as ApiUnit);
+            const unit = this.toUnit((await this.callApi(`/units/${id}`, 'GET')) as ApiUnit);
             this.units[id] = unit;
             return unit;
         } catch (e) {
-            ApplicationLogger.error(`Error loading unit ${id}: ${e}`, {service: this.constructor.name, id: this.getId()});
+            ApplicationLogger.error(`Error loading unit ${id}: ${e}`, {
+                service: this.constructor.name,
+                id: this.getId(),
+            });
             return null;
         }
     }
@@ -181,7 +186,7 @@ export class ApiConnector extends AbstractConnector {
     async loadAllUnits(): Promise<Record<string, Unit>> {
         const units: Record<string, Unit> = {};
         try {
-            for (const rawUnit of await this.callApi('/units', 'GET') as ApiUnit[]) {
+            for (const rawUnit of (await this.callApi('/units', 'GET')) as ApiUnit[]) {
                 units[rawUnit.id] = this.toUnit(rawUnit);
             }
             this.units = units;
@@ -215,10 +220,10 @@ export class ApiConnector extends AbstractConnector {
                 try {
                     await this.callApi(`/units/${unitId}`, 'PATCH', {position: next});
                 } catch (e) {
-                    console.log(e)
+                    console.log(e);
                     ApplicationLogger.error(`Error updating position of unit ${unitId}: ${e}`, {
                         service: this.constructor.name,
-                        id: this.getId()
+                        id: this.getId(),
                     });
                 }
             }
@@ -238,5 +243,4 @@ export class ApiConnector extends AbstractConnector {
         }
         return apiPosition;
     }
-
 }

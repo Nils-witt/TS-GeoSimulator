@@ -1,8 +1,8 @@
 import {AbstractSimulator} from './AbstractSimulator';
 import {LatLonPosition} from '../Types';
 import {ApplicationLogger} from '../utils/Logger';
-import {RouteFinishedEvent} from "../events/RouteFinishedEvent";
-import {getFormattedDate} from "../utils/Helpers";
+import {RouteFinishedEvent} from '../events/RouteFinishedEvent';
+import {getFormattedDate} from '../utils/Helpers';
 
 export interface RouteSimulatorOptions {
     serverUrl?: string; // e.g. https://router.project-osrm.org/route/v1
@@ -15,7 +15,6 @@ export interface RouteSimulatorOptions {
     end: LatLonPosition;
     loop?: boolean;
 }
-
 
 export interface OSRMResponse {
     routes: {
@@ -52,7 +51,7 @@ export class RouteSimulator extends AbstractSimulator {
             fetchTimeoutMs: options.fetchTimeoutMs ?? 10000,
             start: options.start,
             end: options.end,
-            loop: options.loop ?? false
+            loop: options.loop ?? false,
         };
     }
 
@@ -62,19 +61,21 @@ export class RouteSimulator extends AbstractSimulator {
             return;
         }
 
-
         await this.fetchRoute();
 
         if (!this.getRoute() || this.getRoute().length === 0) {
             // emit error event via base class
-            ApplicationLogger.error('Failed to fetch route, cannot start simulation.', {service: this.constructor.name, id: this.getId()});
+            ApplicationLogger.error('Failed to fetch route, cannot start simulation.', {
+                service: this.constructor.name,
+                id: this.getId(),
+            });
             this.emit(new Event('error'));
             return;
         }
         ApplicationLogger.info('Route fetched successfully.', {
             service: this.constructor.name,
             data: {routeLength: this.getRoute().length},
-            id: this.getId()
+            id: this.getId(),
         });
     }
 
@@ -101,7 +102,6 @@ export class RouteSimulator extends AbstractSimulator {
     }
 
     private async fetchRoute(): Promise<void> {
-
         const url = `${this.options.serverUrl}/${this.options.profile}/${this.startPos.longitude},${this.startPos.latitude};${this.endPos.longitude},${this.endPos.latitude}?overview=full&geometries=geojson`;
 
         let attempt = 0;
@@ -115,7 +115,10 @@ export class RouteSimulator extends AbstractSimulator {
                 clearTimeout(timeout);
 
                 if (!resp.ok) {
-                    ApplicationLogger.warn(`Failed to fetch route (status: ${resp.status}). Attempt ${attempt} of ${this.options.maxRetries}.`, {service: this.constructor.name, id: this.getId()});
+                    ApplicationLogger.warn(
+                        `Failed to fetch route (status: ${resp.status}). Attempt ${attempt} of ${this.options.maxRetries}.`,
+                        {service: this.constructor.name, id: this.getId()},
+                    );
                     // handle 429 with potential Retry-After header
                     if (resp.status === 429) {
                         const ra = resp.headers.get('Retry-After');
@@ -128,15 +131,24 @@ export class RouteSimulator extends AbstractSimulator {
                     continue;
                 }
 
-                const json = await resp.json() as OSRMResponse;
+                const json = (await resp.json()) as OSRMResponse;
                 if (!json || !json.routes || json.routes.length === 0) {
-                    ApplicationLogger.error('No routes found in response.', {service: this.constructor.name, id: this.getId()});
+                    ApplicationLogger.error('No routes found in response.', {
+                        service: this.constructor.name,
+                        id: this.getId(),
+                    });
                     break;
                 }
-                ApplicationLogger.info(`New Route from ${json.waypoints[0].location} (${json.waypoints[0].name}) to ${json.waypoints[1].location} (${json.waypoints[1].name}) with distance ${json.routes[0].distance} meters and duration ${json.routes[0].duration} seconds.`, {service: this.constructor.name, id: this.getId()});
+                ApplicationLogger.info(
+                    `New Route from ${json.waypoints[0].location} (${json.waypoints[0].name}) to ${json.waypoints[1].location} (${json.waypoints[1].name}) with distance ${json.routes[0].distance} meters and duration ${json.routes[0].duration} seconds.`,
+                    {service: this.constructor.name, id: this.getId()},
+                );
                 const etaSeconds = json.routes[0].duration;
                 const eta = new Date(Date.now() + etaSeconds * 1000);
-                ApplicationLogger.info(`Estimated Time of Arrival: ${getFormattedDate(eta)} (${(etaSeconds / 60).toFixed(1)} Minutes)`, {service: this.constructor.name, id: this.getId()});
+                ApplicationLogger.info(
+                    `Estimated Time of Arrival: ${getFormattedDate(eta)} (${(etaSeconds / 60).toFixed(1)} Minutes)`,
+                    {service: this.constructor.name, id: this.getId()},
+                );
                 const coords: number[][] = json.routes[0].geometry.coordinates;
                 this.setRoute(coords.map((c: number[]) => ({latitude: c[1], longitude: c[0]})));
                 return;
@@ -175,14 +187,20 @@ export class RouteSimulator extends AbstractSimulator {
             this.remainingDistanceInSegment = 0;
             // if reached end
             if (this.currentIndex >= this.getRoute().length - 1) {
-                if (this.options.loop ) {
-                    ApplicationLogger.info('Looping route simulation back to start.', {service: this.constructor.name, id: this.getId()});
+                if (this.options.loop) {
+                    ApplicationLogger.info('Looping route simulation back to start.', {
+                        service: this.constructor.name,
+                        id: this.getId(),
+                    });
                     this.currentIndex = 0;
                     this.setPosition(this.getRoute()[0]);
                     return;
                 }
-                ApplicationLogger.info('Route simulation finished.', {service: this.constructor.name, id: this.getId()});
-                this.emit(new RouteFinishedEvent())
+                ApplicationLogger.info('Route simulation finished.', {
+                    service: this.constructor.name,
+                    id: this.getId(),
+                });
+                this.emit(new RouteFinishedEvent());
                 this.stop();
             }
             return;
@@ -229,7 +247,13 @@ function bearingBetween(a: LatLonPosition, b: LatLonPosition): number {
     return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
-function offsetPosition(latDeg: number, lonDeg: number, distanceMeters: number, bearingDeg: number, earthRadiusMeters = 6371000): LatLonPosition {
+function offsetPosition(
+    latDeg: number,
+    lonDeg: number,
+    distanceMeters: number,
+    bearingDeg: number,
+    earthRadiusMeters = 6371000,
+): LatLonPosition {
     const lat1 = toRad(latDeg);
     const lon1 = toRad(lonDeg);
     const bearing = toRad(bearingDeg);
@@ -245,4 +269,3 @@ function offsetPosition(latDeg: number, lonDeg: number, distanceMeters: number, 
 
     return {latitude: toDeg(lat2), longitude: toDeg(lon2)};
 }
-

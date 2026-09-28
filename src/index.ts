@@ -7,18 +7,17 @@ import {UUID} from 'crypto';
 import {AbstractConnector} from './connectors/AbstractConnector';
 import {WebSocketConnector} from './connectors/WebSocketConnector';
 import {config} from 'dotenv';
-import {RouteSimulator} from "./simulator/RouteSimulator";
-import {AbstractSimulator} from "./simulator/AbstractSimulator";
-import {RandomRouteSimulator} from "./simulator/RandomRouteSimulator";
-import {SqliteConnector} from "./connectors/SqliteConnector";
-import {EmergencyDispatchSimulator} from "./simulator/EmergencyDispatchSimulator";
-import {ApiConnector} from "./connectors/ApiConnector";
-import {Unit} from "./entities/Unit";
+import {RouteSimulator} from './simulator/RouteSimulator';
+import {AbstractSimulator} from './simulator/AbstractSimulator';
+import {RandomRouteSimulator} from './simulator/RandomRouteSimulator';
+import {SqliteConnector} from './connectors/SqliteConnector';
+import {EmergencyDispatchSimulator} from './simulator/EmergencyDispatchSimulator';
+import {ApiConnector} from './connectors/ApiConnector';
+import {Unit} from './entities/Unit';
 
 config();
 
 class GeoSimulator {
-
     // Format: Map<EventName, Array<ListenerFunction>>
     private listeners = new Map<string, EventListener[]>();
     private config: ConfigType | null = null;
@@ -39,29 +38,34 @@ class GeoSimulator {
         if (!this.config) {
             ApplicationLogger.error('Configuration not loaded. Cannot set up simulations.', {
                 service: this.constructor.name,
-                id: 'Main'
+                id: 'Main',
             });
             return;
         }
         // Set up simulations based on this.config
         ApplicationLogger.info('Setting up simulations based on configuration.', {
             service: this.constructor.name,
-            id: 'Main'
+            id: 'Main',
         });
 
         for (const conn of this.config.connectors) {
             ApplicationLogger.info(`Configuring connector: ${conn.connector} at ${conn.id}`, {
                 service: this.constructor.name,
-                id: 'Main'
+                id: 'Main',
             });
             // Here you would set up the actual connector instances
             if (conn.connector === 'WebSocketConnector') {
-                const connector = new WebSocketConnector(conn.data['url'] as string, conn.data['token'] as string, true, conn.id);
+                const connector = new WebSocketConnector(
+                    conn.data['url'] as string,
+                    conn.data['token'] as string,
+                    true,
+                    conn.id,
+                );
                 this.connectors.set(conn.id, connector);
                 await connector.setup();
                 ApplicationLogger.info(`WebSocketConnector configured with data: ${JSON.stringify(conn.data)}`, {
                     service: this.constructor.name,
-                    id: 'Main'
+                    id: 'Main',
                 });
             } else if (conn.connector === 'SqliteConnector') {
                 const sqliteConnector = new SqliteConnector(conn.id, conn.data['databasePath'] as string);
@@ -72,12 +76,12 @@ class GeoSimulator {
                 const apiConnector = new ApiConnector(conn.data['url'] as string, conn.data['token'] as string);
                 this.connectors.set(conn.id, apiConnector);
                 await apiConnector.setup();
-                console.log(await apiConnector.loadAllUnits())
+                console.log(await apiConnector.loadAllUnits());
                 ApplicationLogger.info(`SqliteConnector configured.`, {service: this.constructor.name, id: 'Main'});
             } else {
                 ApplicationLogger.warn(`Unknown connector type: ${conn.connector}`, {
                     service: this.constructor.name,
-                    id: 'Main'
+                    id: 'Main',
                 });
             }
         }
@@ -85,15 +89,15 @@ class GeoSimulator {
         for (const vehicle of this.config.vehicles) {
             ApplicationLogger.info(`Setting up simulation for vehicle: ${vehicle.name}`, {
                 service: this.constructor.name,
-                id: 'Main'
+                id: 'Main',
             });
             if (!vehicle.enabled) {
                 continue;
             }
             if (!vehicle.id) {
-                ApplicationLogger.info("Vehicle ID not set, obtaining from api.", {
+                ApplicationLogger.info('Vehicle ID not set, obtaining from api.', {
                     service: this.constructor.name,
-                    id: 'Main'
+                    id: 'Main',
                 });
                 for (const connector of this.connectors.values()) {
                     const id = connector.lookUpEntityUUID(vehicle.name);
@@ -101,7 +105,7 @@ class GeoSimulator {
                         vehicle.id = id;
                         ApplicationLogger.info(`Found vehicle ID ${id} for vehicle name: ${vehicle.name}`, {
                             service: this.constructor.name,
-                            id: 'Main'
+                            id: 'Main',
                         });
                         break;
                     }
@@ -109,18 +113,21 @@ class GeoSimulator {
                 if (vehicle.id == null) {
                     ApplicationLogger.error(`Could not find vehicle ID for vehicle name: ${vehicle.name}`, {
                         service: this.constructor.name,
-                        id: 'Main'
+                        id: 'Main',
                     });
                     for (const connector of this.connectors.values()) {
                         if (connector instanceof ApiConnector) {
                             const newUnit = await connector.saveUnit(new Unit({name: vehicle.name}));
-                            console.log("BWE", newUnit)
+                            console.log('BWE', newUnit);
                             if (newUnit) {
                                 vehicle.id = newUnit.getId() as string;
-                                ApplicationLogger.info(`Created new vehicle with ID ${vehicle.id} for vehicle name: ${vehicle.name}`, {
-                                    service: this.constructor.name,
-                                    id: 'Main'
-                                });
+                                ApplicationLogger.info(
+                                    `Created new vehicle with ID ${vehicle.id} for vehicle name: ${vehicle.name}`,
+                                    {
+                                        service: this.constructor.name,
+                                        id: 'Main',
+                                    },
+                                );
                                 break;
                             }
                         }
@@ -137,14 +144,12 @@ class GeoSimulator {
                 const data = vehicle.data as Record<string, string | number | boolean | LatLonPosition>;
 
                 simulatorInstance = new RouteSimulator({
-                        start: data['start'] as LatLonPosition,
-                        end: data['end'] as LatLonPosition,
-                        speedMps: data['speed'] as number,
-                        updateIntervalMs: 2000,
-                        profile: data['movementType'] as string || 'driving'
-                    }
-                );
-
+                    start: data['start'] as LatLonPosition,
+                    end: data['end'] as LatLonPosition,
+                    speedMps: data['speed'] as number,
+                    updateIntervalMs: 2000,
+                    profile: (data['movementType'] as string) || 'driving',
+                });
             } else if (vehicle.simulator === 'RandomRouteSimulator') {
                 const data = vehicle.data as Record<string, string | number | boolean | LatLonPosition>;
                 simulatorInstance = new RandomRouteSimulator({
@@ -153,8 +158,8 @@ class GeoSimulator {
                     routeSimulatorOptions: {
                         speedMps: data['speed'] as number,
                         updateIntervalMs: 2000,
-                        profile: data['movementType'] as string || 'driving'
-                    }
+                        profile: (data['movementType'] as string) || 'driving',
+                    },
                 });
             } else if (vehicle.simulator === 'EmergencyDispatchSimulator') {
                 const data = vehicle.data as Record<string, string | number | boolean | LatLonPosition>;
@@ -165,17 +170,17 @@ class GeoSimulator {
                         homeLocation: data['homeLocation'] as LatLonPosition,
                         speedMps: data['speed'] as number,
                         updateIntervalMs: 2000,
-                        profile: data['movementType'] as string || 'driving'
-                    }
+                        profile: (data['movementType'] as string) || 'driving',
+                    },
                 });
             }
 
             if (simulatorInstance == null) {
                 ApplicationLogger.error(`Simulator instance could not be created. Vehicle ID: ${vehicle.id}`, {
                     service: this.constructor.name,
-                    id: 'Main'
+                    id: 'Main',
                 });
-                continue
+                continue;
             }
             await simVehicle.setup(simulatorInstance);
             this.vehicles.set(vehicle.id as UUID, simVehicle);
@@ -187,12 +192,12 @@ class GeoSimulator {
                     connector.attachEntity(simVehicle);
                     ApplicationLogger.info(`Attached connector ${connId} to vehicle ${vehicle.id}`, {
                         service: this.constructor.name,
-                        id: 'Main'
+                        id: 'Main',
                     });
                 } else {
                     ApplicationLogger.warn(`Connector ${connId} not found for vehicle ${vehicle.id}`, {
                         service: this.constructor.name,
-                        id: 'Main'
+                        id: 'Main',
                     });
                 }
             }
@@ -210,7 +215,6 @@ class GeoSimulator {
         }
     }
 
-
     on(eventName: string, listener: EventListener) {
         if (!this.listeners.has(eventName)) {
             this.listeners.set(eventName, []);
@@ -226,8 +230,6 @@ class GeoSimulator {
             }
         }
     }
-
-
 }
 
 if (require.main === module) {

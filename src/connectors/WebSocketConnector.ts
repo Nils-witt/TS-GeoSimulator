@@ -1,16 +1,15 @@
 import {ApplicationLogger} from '../utils/Logger';
 import {AbstractConnector} from './AbstractConnector';
-import {randomUUID} from "node:crypto";
-import {EntityPositionUpdateEvent} from "../events/EntityPositionUpdateEvent";
-import {LatLonPosition} from "../Types";
-import {EntityStatusEvent} from "../events/EntityStatusEvent";
-import {EntityRouteEvent} from "../events/EntityRouteEvent";
+import {randomUUID} from 'node:crypto';
+import {EntityPositionUpdateEvent} from '../events/EntityPositionUpdateEvent';
+import {LatLonPosition} from '../Types';
+import {EntityStatusEvent} from '../events/EntityStatusEvent';
+import {EntityRouteEvent} from '../events/EntityRouteEvent';
 
 interface WebSocketMessage {
     command: string;
     data: Map<string, string | number | boolean | null>;
 }
-
 
 export class WebSocketConnector extends AbstractConnector {
     private apiUrl: string;
@@ -21,7 +20,6 @@ export class WebSocketConnector extends AbstractConnector {
     private storedPositions: Map<string, EntityPositionUpdateEvent> = new Map<string, EntityPositionUpdateEvent>();
     private storedStatus: Map<string, EntityStatusEvent> = new Map<string, EntityStatusEvent>();
     private storedRoutes: Map<string, EntityRouteEvent> = new Map<string, EntityRouteEvent>();
-
 
     constructor(apiUrl: string, authToken: string, autoReconnect = false, id: string = randomUUID()) {
         super(id);
@@ -43,13 +41,13 @@ export class WebSocketConnector extends AbstractConnector {
     connect(): void {
         ApplicationLogger.info(`Connecting to WebSocket at ${this.apiUrl.substring(0, 75)}...`, {
             service: this.constructor.name,
-            id: this.getId()
+            id: this.getId(),
         });
         this.socket = new WebSocket(this.apiUrl + '?token=' + this.token);
         if (this.errorCount > 10) {
             ApplicationLogger.error('Maximum reconnection attempts reached. Stopping auto-reconnect.', {
                 service: this.constructor.name,
-                id: this.getId()
+                id: this.getId(),
             });
             this.autoReconnect = false;
             return;
@@ -60,7 +58,7 @@ export class WebSocketConnector extends AbstractConnector {
             this.errorCount = 0;
             // Send any queued messages
 
-            this.storedPositions.forEach(event => {
+            this.storedPositions.forEach((event) => {
                 const position = event.getPosition() as LatLonPosition;
                 const entity = event.getEntity();
                 const message = {
@@ -69,14 +67,14 @@ export class WebSocketConnector extends AbstractConnector {
                     id: entity.getId(),
                     data: {
                         latitude: position ? position.latitude : null,
-                        longitude: position ? position.longitude : null
-                    }
+                        longitude: position ? position.longitude : null,
+                    },
                 };
                 this.socket!.send(JSON.stringify(message));
                 this.storedPositions.delete(entity.getId());
             });
 
-            this.storedStatus.forEach(event => {
+            this.storedStatus.forEach((event) => {
                 const entity = event.getEntity();
                 const status = event.getStatus();
                 const message = {
@@ -84,14 +82,14 @@ export class WebSocketConnector extends AbstractConnector {
                     model: 'Unit',
                     id: entity.getId(),
                     data: {
-                        unit_status: status
-                    }
+                        unit_status: status,
+                    },
                 };
                 this.socket!.send(JSON.stringify(message));
                 this.storedStatus.delete(entity.getId());
             });
 
-            this.storedRoutes.forEach(event => {
+            this.storedRoutes.forEach((event) => {
                 const entity = event.getEntity();
                 const route = event.getRoute();
                 const message = {
@@ -99,8 +97,8 @@ export class WebSocketConnector extends AbstractConnector {
                     model: 'Unit',
                     id: entity.getId(),
                     data: {
-                        route: route
-                    }
+                        route: route,
+                    },
                 };
                 this.socket!.send(JSON.stringify(message));
                 this.storedRoutes.delete(entity.getId());
@@ -111,21 +109,24 @@ export class WebSocketConnector extends AbstractConnector {
                 const data = JSON.parse(event.data as string) as WebSocketMessage;
                 ApplicationLogger.debug(`Received WebSocket message: ${event.data}`, {
                     service: this.constructor.name,
-                    data: data
+                    data: data,
                 });
                 // Handle incoming messages as needed
             } catch (e) {
                 ApplicationLogger.error('Error parsing WebSocket message:', {
                     service: this.constructor.name,
                     error: e,
-                    data: event.data as string
+                    data: event.data as string,
                 });
             }
         };
         this.socket.onerror = (error) => {
-            ApplicationLogger.error('WebSocket error:' + error, {service: this.constructor.name, error: error, id: this.getId()});
+            ApplicationLogger.error('WebSocket error:' + error, {
+                service: this.constructor.name,
+                error: error,
+                id: this.getId(),
+            });
             this.errorCount++;
-
         };
         this.socket.onclose = () => {
             ApplicationLogger.info('Disconnected from WebSocket.', {service: this.constructor.name, id: this.getId()});
@@ -157,19 +158,22 @@ export class WebSocketConnector extends AbstractConnector {
                 id: entity.getId(),
                 data: {
                     latitude: position ? position.latitude : null,
-                    longitude: position ? position.longitude : null
-                }
+                    longitude: position ? position.longitude : null,
+                },
             };
-            ApplicationLogger.debug(`Sending position update via WebSocket. Unit: ${entity.getId()} Pos: ${JSON.stringify(position)}`, {
-                service: this.constructor.name,
-                id: this.getId()
-            });
+            ApplicationLogger.debug(
+                `Sending position update via WebSocket. Unit: ${entity.getId()} Pos: ${JSON.stringify(position)}`,
+                {
+                    service: this.constructor.name,
+                    id: this.getId(),
+                },
+            );
             this.socket.send(JSON.stringify(message));
         } else {
-            this.storedPositions.set(event.getEntity().getId(), event)
+            this.storedPositions.set(event.getEntity().getId(), event);
             ApplicationLogger.warn('WebSocket is not connected. Cannot send position update.', {
                 service: this.constructor.name,
-                id: this.getId()
+                id: this.getId(),
             });
         }
         return Promise.resolve();
@@ -180,7 +184,7 @@ export class WebSocketConnector extends AbstractConnector {
         const entity = event.getEntity();
         ApplicationLogger.info(`Received WebSocket status: ${event.getStatus()}`, {
             service: this.constructor.name,
-            id: this.getId()
+            id: this.getId(),
         });
         if (this.socket && this.socket.readyState == WebSocket.OPEN) {
             const message = {
@@ -188,15 +192,15 @@ export class WebSocketConnector extends AbstractConnector {
                 model: 'Unit',
                 id: entity.getId(),
                 data: {
-                    unit_status: status
-                }
+                    unit_status: status,
+                },
             };
             this.socket.send(JSON.stringify(message));
         } else {
-            this.storedStatus.set(event.getEntity().getId(), event)
+            this.storedStatus.set(event.getEntity().getId(), event);
             ApplicationLogger.warn('WebSocket is not connected. Cannot send position update.', {
                 service: this.constructor.name,
-                id: this.getId()
+                id: this.getId(),
             });
         }
         return Promise.resolve();
@@ -212,18 +216,17 @@ export class WebSocketConnector extends AbstractConnector {
                 model: 'Unit',
                 id: entity.getId(),
                 data: {
-                    route: route
-                }
+                    route: route,
+                },
             };
             this.socket.send(JSON.stringify(message));
         } else {
-            this.storedRoutes.set(event.getEntity().getId(), event)
+            this.storedRoutes.set(event.getEntity().getId(), event);
             ApplicationLogger.warn('WebSocket is not connected. Cannot send position update.', {
                 service: this.constructor.name,
-                id: this.getId()
+                id: this.getId(),
             });
         }
         return Promise.resolve();
-
     }
 }

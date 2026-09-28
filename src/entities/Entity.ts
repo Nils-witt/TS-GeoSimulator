@@ -9,22 +9,19 @@
 export type DBRecord = Record<string, string | number | boolean | null | object>;
 
 export class Entity {
-
     private listeners: Record<string, ((...args: unknown[]) => void)[]> = {};
-
 
     public on(event: string, listener: (...args: unknown[]) => void): void {
         // Implementation for adding an event listener
         if (!this.listeners[event]) {
             this.listeners[event] = [];
-
         }
         this.listeners[event].push(listener);
     }
 
     public off(event: string, listener: (...args: unknown[]) => void): void {
         if (!this.listeners[event]) return;
-        this.listeners[event] = this.listeners[event].filter(l => l !== listener);
+        this.listeners[event] = this.listeners[event].filter((l) => l !== listener);
     }
 
     public notify(event: string, ...args: unknown[]): void {

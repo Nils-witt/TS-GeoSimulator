@@ -1,12 +1,10 @@
 import {AbstractEntity} from '../entities/AbstractEntity';
-import {UUID} from "crypto";
-import {EntityPositionUpdateEvent} from "../events/EntityPositionUpdateEvent";
-import {EntityStatusEvent} from "../events/EntityStatusEvent";
-import {EntityRouteEvent} from "../events/EntityRouteEvent";
-
+import {UUID} from 'crypto';
+import {EntityPositionUpdateEvent} from '../events/EntityPositionUpdateEvent';
+import {EntityStatusEvent} from '../events/EntityStatusEvent';
+import {EntityRouteEvent} from '../events/EntityRouteEvent';
 
 export abstract class AbstractConnector {
-
     private id: string;
     private entities: Map<UUID, AbstractEntity> = new Map<UUID, AbstractEntity>();
 
@@ -41,7 +39,7 @@ export abstract class AbstractConnector {
         entity.on('routeUpdate', (event) => {
             this.onEntityRouteUpdate(event as EntityRouteEvent);
         });
-    };
+    }
 
     public getId(): string {
         return this.id;
