@@ -5,6 +5,7 @@
  * Exports: WebUIConnector
  * Purpose: persist the status/route/position history of every attached entity in SQLite and serve it
  * via a small JSON API, a Server-Sent-Events stream (/api/events) and the static page in /public.
+ * The simulator config is edited through /api/config; saving it reloads all simulations.
  */
 
 import * as fs from 'node:fs';
@@ -16,13 +17,16 @@ import {Vehicle} from '../entities/Vehicle';
 import {EntityPositionUpdateEvent} from '../events/EntityPositionUpdateEvent';
 import {EntityStatusEvent} from '../events/EntityStatusEvent';
 import {EntityRouteEvent} from '../events/EntityRouteEvent';
-import {LatLonPosition} from '../Types';
+import {Database} from 'sqlite';
+import {ConfigType, LatLonPosition} from '../Types';
 import {SqliteConnector} from './SqliteConnector';
+import {CONNECTOR_TYPES, ConfigStore, SIMULATOR_TYPES, validateConfig} from '../config/ConfigStore';
 import {ApplicationLogger} from '../utils/Logger';
 
 const MAX_POSITIONS = 5000;
 const MAX_STATUSES = 500;
 const MAX_ROUTES = 50;
+const MAX_BODY_BYTES = 1024 * 1024;
 
 const PUBLIC_DIR = path.resolve(__dirname, '..', '..', 'public');
 const CONTENT_TYPES: Record<string, string> = {
@@ -48,16 +52,27 @@ export class WebUIConnector extends AbstractConnector {
     private clients: Set<http.ServerResponse> = new Set<http.ServerResponse>();
     private states: Map<string, EntityState> = new Map<string, EntityState>();
     private store: SqliteConnector;
+    private configStore: ConfigStore;
+    private reload: () => Promise<void>;
+    private applying = false;
 
-    constructor(id: string, databasePath: string, port = 8080, host = '127.0.0.1') {
+    constructor(
+        id: string,
+        db: Database,
+        configStore: ConfigStore,
+        reload: () => Promise<void>,
+        port = 8080,
+        host = '127.0.0.1',
+    ) {
         super(id);
         this.port = port;
         this.host = host;
-        this.store = new SqliteConnector(`${id}-store`, databasePath);
+        this.store = new SqliteConnector(`${id}-store`, db);
+        this.configStore = configStore;
+        this.reload = reload;
     }
 
     async setup(): Promise<void> {
-        fs.mkdirSync(path.dirname(this.store.getPath()), {recursive: true});
         await this.store.setup();
         this.connect();
     }
@@ -86,6 +101,17 @@ export class WebUIConnector extends AbstractConnector {
         this.server?.close();
         this.server = null;
         this.store.disconnect();
+    }
+
+    override detachAll(): void {
+        super.detachAll();
+        this.store.detachAll();
+        this.states.clear();
+    }
+
+    /** Tells open pages that the set of vehicles changed. */
+    notifyReloaded(): void {
+        this.broadcast('reload', {});
     }
 
     override attachEntity(entity: AbstractEntity): void {
@@ -177,12 +203,24 @@ export class WebUIConnector extends AbstractConnector {
     }
 
     private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+        const url = new URL(req.url ?? '/', 'http://localhost');
+        const parts = url.pathname.split('/').filter(Boolean);
+
+        // GET/PUT /api/config
+        if (parts.length === 2 && parts[0] === 'api' && parts[1] === 'config') {
+            if (req.method === 'GET') {
+                this.sendConfig(res);
+            } else if (req.method === 'PUT') {
+                this.updateConfig(req, res);
+            } else {
+                this.sendJson(res, 405, {error: 'Method not allowed'});
+            }
+            return;
+        }
         if (req.method !== 'GET') {
             this.sendJson(res, 405, {error: 'Method not allowed'});
             return;
         }
-        const url = new URL(req.url ?? '/', 'http://localhost');
-        const parts = url.pathname.split('/').filter(Boolean);
 
         if (parts[0] !== 'api') {
             this.serveStatic(url.pathname, res);
@@ -230,6 +268,77 @@ export class WebUIConnector extends AbstractConnector {
         }
 
         this.sendJson(res, 404, {error: 'Not found'});
+    }
+
+    private async sendConfig(res: http.ServerResponse): Promise<void> {
+        try {
+            this.sendJson(res, 200, {
+                config: await this.configStore.load(),
+                connectorTypes: CONNECTOR_TYPES,
+                simulatorTypes: SIMULATOR_TYPES,
+                applying: this.applying,
+            });
+        } catch (e) {
+            ApplicationLogger.error(`Error loading config: ${e}`, {service: this.constructor.name, id: this.getId()});
+            this.sendJson(res, 500, {error: 'Could not load config'});
+        }
+    }
+
+    private readBody(req: http.IncomingMessage): Promise<string> {
+        return new Promise((resolve, reject) => {
+            let body = '';
+            req.setEncoding('utf-8');
+            req.on('data', (chunk: string) => {
+                body += chunk;
+                if (body.length > MAX_BODY_BYTES) {
+                    reject(new Error('Request body too large'));
+                    req.destroy();
+                }
+            });
+            req.on('end', () => resolve(body));
+            req.on('error', reject);
+        });
+    }
+
+    private async updateConfig(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+        // Requiring JSON forces a CORS preflight, so other websites cannot change the config.
+        if (!req.headers['content-type']?.startsWith('application/json')) {
+            this.sendJson(res, 415, {error: 'Expected application/json'});
+            return;
+        }
+        let config: unknown;
+        try {
+            config = JSON.parse(await this.readBody(req));
+        } catch (e) {
+            this.sendJson(res, 400, {errors: [`Invalid request: ${e instanceof Error ? e.message : e}`]});
+            return;
+        }
+        const errors = validateConfig(config);
+        if (errors.length > 0) {
+            this.sendJson(res, 400, {errors});
+            return;
+        }
+        if (this.applying) {
+            this.sendJson(res, 409, {errors: ['The previous config is still being applied. Try again shortly.']});
+            return;
+        }
+
+        this.applying = true;
+        try {
+            await this.configStore.save(config as ConfigType);
+            ApplicationLogger.info('Config updated through the web UI.', {
+                service: this.constructor.name,
+                id: this.getId(),
+            });
+            await this.reload();
+            this.sendJson(res, 200, {config: await this.configStore.load()});
+        } catch (e) {
+            ApplicationLogger.error(`Error applying config: ${e}`, {service: this.constructor.name, id: this.getId()});
+            this.sendJson(res, 500, {errors: [`Config saved, but starting the simulations failed: ${e}`]});
+        } finally {
+            this.applying = false;
+            this.notifyReloaded();
+        }
     }
 
     private async sendHistory(entityId: string, res: http.ServerResponse): Promise<void> {

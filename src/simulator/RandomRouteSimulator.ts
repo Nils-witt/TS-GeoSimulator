@@ -21,6 +21,7 @@ export interface RandomRouteSimulatorOptions {
 export class RandomRouteSimulator extends AbstractSimulator {
     private options: RandomRouteSimulatorOptions;
     private currentRouteSimulator: RouteSimulator | undefined;
+    private running = false;
 
     constructor(options: RandomRouteSimulatorOptions) {
         super();
@@ -81,6 +82,9 @@ export class RandomRouteSimulator extends AbstractSimulator {
                 id: this.getId(),
             });
             setTimeout(() => {
+                if (!this.running) {
+                    return;
+                }
                 this.runNewRoute();
             }, waitTillNewRoute);
         });
@@ -88,6 +92,9 @@ export class RandomRouteSimulator extends AbstractSimulator {
         new_route
             .setup()
             .then(() => {
+                if (!this.running) {
+                    return;
+                }
                 new_route.start();
                 ApplicationLogger.info(
                     `Starting new route. From ${start.latitude} ${start.longitude} to ${end.latitude} ${end.longitude}`,
@@ -104,10 +111,12 @@ export class RandomRouteSimulator extends AbstractSimulator {
 
     start(): void {
         ApplicationLogger.info('Starting simulation.', {service: this.constructor.name, id: this.getId()});
+        this.running = true;
         this.runNewRoute();
     }
 
     stop(): void {
+        this.running = false;
         this.currentRouteSimulator?.stop();
     }
 }

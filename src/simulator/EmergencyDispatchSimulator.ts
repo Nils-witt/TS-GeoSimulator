@@ -24,6 +24,7 @@ export interface EmergencyDispatchSimulatorOptions {
 export class EmergencyDispatchSimulator extends AbstractSimulator {
     private options: EmergencyDispatchSimulatorOptions;
     private currentRouteSimulator: RouteSimulator | undefined;
+    private running = false;
     constructor(options: EmergencyDispatchSimulatorOptions) {
         super();
         this.options = options;
@@ -79,6 +80,9 @@ export class EmergencyDispatchSimulator extends AbstractSimulator {
             this.setRoute((event as SimulatorRouteEvent).getRoute());
         });
         await new_route.setup();
+        if (!this.running) {
+            return;
+        }
 
         this.currentRouteSimulator = new_route;
 
@@ -113,6 +117,9 @@ export class EmergencyDispatchSimulator extends AbstractSimulator {
             this.setRoute((event as SimulatorRouteEvent).getRoute());
         });
         await new_route.setup();
+        if (!this.running) {
+            return;
+        }
 
         this.currentRouteSimulator = new_route;
 
@@ -143,17 +150,21 @@ export class EmergencyDispatchSimulator extends AbstractSimulator {
             });
             return;
         }
+        this.running = true;
         this.setStatus(2);
         this.setPosition(homeLocation);
 
         (async () => {
-            while (true) {
+            while (this.running) {
                 const waitTimeToDispatch = randomInt(10, 200) * 1000;
                 ApplicationLogger.info(
                     `Waiting for ${waitTimeToDispatch / 1000} seconds before next dispatch.(rill ${getFormattedDate(new Date(Date.now() + waitTimeToDispatch))})`,
                     {service: this.constructor.name, id: this.getId()},
                 );
                 await new Promise((resolve) => setTimeout(resolve, waitTimeToDispatch));
+                if (!this.running) {
+                    return;
+                }
 
                 ApplicationLogger.info('Dispatching to new emergency location.', {
                     service: this.constructor.name,
@@ -161,6 +172,9 @@ export class EmergencyDispatchSimulator extends AbstractSimulator {
                 });
                 this.setStatus(3);
                 await this.runDispatchRoute();
+                if (!this.running) {
+                    return;
+                }
                 const waitTimeToHome = randomInt(5, 300) * 1000;
                 this.setStatus(4);
                 ApplicationLogger.info(
@@ -168,12 +182,18 @@ export class EmergencyDispatchSimulator extends AbstractSimulator {
                     {service: this.constructor.name, id: this.getId()},
                 );
                 await new Promise((resolve) => setTimeout(resolve, waitTimeToHome));
+                if (!this.running) {
+                    return;
+                }
                 ApplicationLogger.info('Returning to home location.', {
                     service: this.constructor.name,
                     id: this.getId(),
                 });
                 this.setStatus(1);
                 await this.runHomeRoute();
+                if (!this.running) {
+                    return;
+                }
                 this.setPosition(homeLocation);
                 this.setStatus(2);
                 ApplicationLogger.info('Arrived at home location.', {service: this.constructor.name, id: this.getId()});
@@ -182,6 +202,7 @@ export class EmergencyDispatchSimulator extends AbstractSimulator {
     }
 
     stop(): void {
+        this.running = false;
         this.currentRouteSimulator?.stop();
     }
 }

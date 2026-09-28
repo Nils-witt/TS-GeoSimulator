@@ -14,8 +14,9 @@ export interface ConfigType {
         name: string;
         enabled: boolean;
         id?: string;
-        speed: number;
-        movementType: string;
+        // Deprecated: only read when importing a legacy config.json, the simulators use data.speed/data.movementType.
+        speed?: number;
+        movementType?: string;
         simulator: string;
         data: Record<string, string | number | boolean | LatLonPosition>;
         connectors: string[];

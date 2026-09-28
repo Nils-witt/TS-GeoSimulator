@@ -47,7 +47,7 @@
             }
             .app {
                 display: grid;
-                grid-template-columns: 340px 1fr;
+                grid-template-columns: 380px 1fr;
                 height: 100%;
             }
             aside {
@@ -166,6 +166,7 @@
                 padding: 8px 16px 0;
                 border-bottom: 1px solid var(--border);
             }
+            .views button,
             .tabs button {
                 border: 0;
                 background: none;
@@ -210,6 +211,155 @@
                 padding: 8px 16px;
                 font-size: 13px;
             }
+            [hidden] {
+                display: none !important;
+            }
+            .views {
+                display: flex;
+                gap: 4px;
+                padding: 4px 12px 0;
+                border-bottom: 1px solid var(--border);
+            }
+            .views button.active {
+                color: var(--text);
+                border-bottom-color: var(--accent);
+            }
+            .view {
+                display: flex;
+                flex-direction: column;
+                flex: 1;
+                min-height: 0;
+            }
+            #config-form {
+                flex: 1;
+                overflow: auto;
+                padding: 0 12px 12px;
+            }
+            .card {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                margin: 8px 0;
+                padding: 10px;
+                border: 1px solid var(--border);
+                border-left: 4px solid var(--card-color, var(--border));
+                border-radius: 8px;
+            }
+            .card.disabled {
+                opacity: 0.6;
+            }
+            .row {
+                display: flex;
+                gap: 8px;
+                align-items: flex-end;
+            }
+            .field {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+                min-width: 0;
+                font-size: 12px;
+                color: var(--muted);
+            }
+            .field.grow {
+                flex: 1;
+            }
+            input,
+            select {
+                width: 100%;
+                min-width: 0;
+                padding: 5px 7px;
+                font: inherit;
+                font-size: 13px;
+                color: var(--text);
+                background: var(--bg);
+                border: 1px solid var(--border);
+                border-radius: 6px;
+            }
+            input:focus,
+            select:focus {
+                outline: 2px solid var(--accent);
+                outline-offset: -1px;
+            }
+            input[type='checkbox'] {
+                width: auto;
+            }
+            .coord {
+                display: grid;
+                grid-template-columns: 92px 1fr 1fr auto;
+                gap: 6px;
+                align-items: center;
+                font-size: 12px;
+                color: var(--muted);
+            }
+            .checks {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 4px 12px;
+                font-size: 13px;
+                color: var(--text);
+            }
+            .btn,
+            button.icon {
+                font: inherit;
+                color: var(--text);
+                background: var(--panel);
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                cursor: pointer;
+            }
+            .btn {
+                padding: 6px 12px;
+            }
+            button.icon {
+                flex-shrink: 0;
+                width: 30px;
+                height: 30px;
+            }
+            button.icon.active,
+            .btn.primary {
+                color: #fff;
+                background: var(--accent);
+                border-color: var(--accent);
+            }
+            .btn.add {
+                width: 100%;
+                border-style: dashed;
+                color: var(--muted);
+            }
+            .btn:disabled {
+                opacity: 0.5;
+                cursor: default;
+            }
+            .config-footer {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                padding: 10px 12px;
+                border-top: 1px solid var(--border);
+            }
+            .config-footer .actions {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+            }
+            #config-state {
+                flex: 1;
+                font-size: 12px;
+                color: var(--muted);
+            }
+            #config-errors ul {
+                margin: 0;
+                padding-left: 18px;
+                max-height: 120px;
+                overflow: auto;
+                font-size: 12px;
+                color: #dc2626;
+            }
+            #map.picking,
+            #map.picking * {
+                cursor: crosshair !important;
+            }
             #map {
                 height: 100%;
             }
@@ -232,9 +382,26 @@
                     <h1>GeoSimulator</h1>
                     <span class="conn" id="conn"><span class="dot"></span><span id="conn-text">connecting…</span></span>
                 </header>
-                <div class="section-title">Vehicles</div>
-                <ul id="vehicles"></ul>
-                <div id="detail"><div class="empty">Select a vehicle to see its route and history.</div></div>
+                <nav class="views">
+                    <button data-view="live" class="active">Live</button>
+                    <button data-view="config">Config</button>
+                </nav>
+                <div id="live-view" class="view">
+                    <div class="section-title">Vehicles</div>
+                    <ul id="vehicles"></ul>
+                    <div id="detail"><div class="empty">Select a vehicle to see its route and history.</div></div>
+                </div>
+                <div id="config-view" class="view" hidden>
+                    <div id="config-form"><div class="empty">Loading…</div></div>
+                    <div class="config-footer">
+                        <div id="config-errors"></div>
+                        <div class="actions">
+                            <span id="config-state"></span>
+                            <button class="btn" id="config-discard" disabled>Discard</button>
+                            <button class="btn primary" id="config-save" disabled>Save &amp; apply</button>
+                        </div>
+                    </div>
+                </div>
             </aside>
             <div id="map"></div>
         </div>
@@ -473,6 +640,7 @@
             // --- Data ---
 
             async function select(id) {
+                if (pickTarget) return;
                 const previous = selectedId;
                 selectedId = id;
                 history = null;
@@ -497,6 +665,19 @@
                 for (const v of list) {
                     vehicles.set(v.id, v);
                     updateLayers(v);
+                }
+                // Vehicles can disappear when the config changes.
+                for (const [id, l] of layers) {
+                    if (vehicles.has(id)) continue;
+                    l.marker.remove();
+                    l.route.remove();
+                    layers.delete(id);
+                }
+                if (selectedId && !vehicles.has(selectedId)) {
+                    selectedId = null;
+                    history = null;
+                    shownRouteIndex = null;
+                    updateOverlays();
                 }
                 renderList();
                 renderDetail();
@@ -557,9 +738,408 @@
                 for (const type of ['position', 'status', 'route']) {
                     es.addEventListener(type, (e) => applyEvent(type, JSON.parse(e.data)));
                 }
+                es.addEventListener('reload', () => {
+                    loadVehicles();
+                    // Pick up changes made in another tab, unless there are local edits.
+                    if (draft && !dirty && !saving) loadConfig();
+                });
             }
 
+            // --- Config ---
+
+            const COORD_LABELS = {
+                start: 'Start',
+                end: 'Destination',
+                corner1: 'Area corner 1',
+                corner2: 'Area corner 2',
+                homeLocation: 'Home station',
+            };
+            const FIELD_LABELS = {url: 'URL', token: 'Token', databasePath: 'Database file'};
+            const MOVEMENT_TYPES = ['driving', 'walking', 'cycling'];
+            const CARD_COLORS = [
+                '#2563eb',
+                '#db2777',
+                '#0891b2',
+                '#65a30d',
+                '#d97706',
+                '#7c3aed',
+                '#dc2626',
+                '#0d9488',
+            ];
+            const cardColor = (i) => CARD_COLORS[i % CARD_COLORS.length];
+
+            let view = 'live';
+            let configMeta = null; // {connectorTypes, simulatorTypes}: required fields per type
+            let draft = null;
+            let dirty = false;
+            let saving = false;
+            let pickTarget = null; // {index, field}
+            const configLayer = L.layerGroup();
+
+            const round = (n) => Math.round(n * 1e6) / 1e6;
+            const isPos = (p) => p && Number.isFinite(p.latitude) && Number.isFinite(p.longitude);
+            function setPath(obj, path, value) {
+                const keys = path.split('.');
+                let target = obj;
+                for (const key of keys.slice(0, -1)) {
+                    if (target[key] == null || typeof target[key] !== 'object') target[key] = {};
+                    target = target[key];
+                }
+                if (value === undefined) delete target[keys.at(-1)];
+                else target[keys.at(-1)] = value;
+            }
+
+            function updateConfigState(message) {
+                $('config-state').textContent =
+                    message ??
+                    (saving
+                        ? 'Applying…'
+                        : pickTarget
+                          ? 'Click on the map to set the position (Esc cancels).'
+                          : dirty
+                            ? 'Unsaved changes'
+                            : '');
+                $('config-save').disabled = saving || !dirty;
+                $('config-discard').disabled = saving || !dirty;
+            }
+            function setDirty(value) {
+                dirty = value;
+                updateConfigState();
+            }
+            function showConfigErrors(errors) {
+                $('config-errors').innerHTML = errors.length
+                    ? `<ul>${errors.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>`
+                    : '';
+            }
+
+            async function loadConfig() {
+                const res = await fetch('api/config');
+                if (!res.ok) {
+                    showConfigErrors(['Could not load the config.']);
+                    return;
+                }
+                const body = await res.json();
+                configMeta = {connectorTypes: body.connectorTypes, simulatorTypes: body.simulatorTypes};
+                draft = body.config;
+                setDirty(false);
+                renderConfig();
+            }
+
+            function fillSimulatorDefaults(v) {
+                const b = map.getBounds().pad(-0.3);
+                const c = map.getCenter();
+                const defaults = {
+                    corner1: {latitude: round(b.getSouth()), longitude: round(b.getWest())},
+                    corner2: {latitude: round(b.getNorth()), longitude: round(b.getEast())},
+                    start: {latitude: round(c.lat), longitude: round(c.lng)},
+                    homeLocation: {latitude: round(c.lat), longitude: round(c.lng)},
+                    end: {latitude: round(b.getNorth()), longitude: round(b.getEast())},
+                };
+                for (const field of configMeta.simulatorTypes[v.simulator] ?? []) {
+                    if (!isPos(v.data[field])) v.data[field] = defaults[field];
+                }
+            }
+
+            const options = (values, selected) => {
+                const list = values.includes(selected) || selected == null ? values : [selected, ...values];
+                return list.map((o) => `<option ${o === selected ? 'selected' : ''}>${esc(o)}</option>`).join('');
+            };
+            const numValue = (n) => (Number.isFinite(n) ? n : '');
+            const speedLabel = (speed) =>
+                `Speed (m/s)${Number.isFinite(speed) ? ` · ${Math.round(speed * 3.6)} km/h` : ''}`;
+
+            function renderConnector(c, i) {
+                const fields = configMeta.connectorTypes[c.connector] ?? [];
+                const typeOptions = options(Object.keys(configMeta.connectorTypes), c.connector);
+                return `<div class="card">
+                    <div class="row">
+                        <label class="field grow"><span>ID</span>
+                            <input data-path="connectors.${i}.id" data-rename="${i}" value="${esc(c.id)}"></label>
+                        <label class="field grow"><span>Type</span>
+                            <select data-path="connectors.${i}.connector" data-rerender>${typeOptions}</select></label>
+                        <button class="icon" data-action="remove-connector" data-index="${i}" title="Remove connector">×</button>
+                    </div>
+                    ${fields
+                        .map(
+                            (f) => `<label class="field"><span>${esc(FIELD_LABELS[f] ?? f)}</span>
+                                <input ${f === 'token' ? 'type="password" autocomplete="off"' : ''}
+                                    data-path="connectors.${i}.data.${f}" value="${esc(c.data?.[f] ?? '')}"></label>`,
+                        )
+                        .join('')}
+                </div>`;
+            }
+
+            function renderVehicle(v, i) {
+                const coords = configMeta.simulatorTypes[v.simulator] ?? [];
+                const connIds = draft.connectors.map((c) => c.id).filter(Boolean);
+                const simulatorOptions = options(Object.keys(configMeta.simulatorTypes), v.simulator);
+                const movementOptions = options(MOVEMENT_TYPES, v.data?.movementType ?? 'driving');
+                const coordRows = coords
+                    .map((f) => {
+                        const p = v.data?.[f] ?? {};
+                        const active = pickTarget && pickTarget.index === i && pickTarget.field === f;
+                        return `<div class="coord"><span>${esc(COORD_LABELS[f] ?? f)}</span>
+                            <input type="number" step="any" placeholder="Latitude" data-coord data-kind="number"
+                                data-path="vehicles.${i}.data.${f}.latitude" value="${numValue(p.latitude)}">
+                            <input type="number" step="any" placeholder="Longitude" data-coord data-kind="number"
+                                data-path="vehicles.${i}.data.${f}.longitude" value="${numValue(p.longitude)}">
+                            <button class="icon ${active ? 'active' : ''}" data-action="pick" data-index="${i}"
+                                data-field="${f}" title="Pick on map">⌖</button></div>`;
+                    })
+                    .join('');
+                const connectorChecks = connIds.length
+                    ? connIds
+                          .map(
+                              (id) => `<label><input type="checkbox" data-vehicle-connector="${i}" value="${esc(id)}"
+                                  ${v.connectors?.includes(id) ? 'checked' : ''}> ${esc(id)}</label>`,
+                          )
+                          .join('')
+                    : '<span style="color: var(--muted)">No connectors defined</span>';
+                return `<div class="card ${v.enabled ? '' : 'disabled'}" style="--card-color: ${cardColor(i)}">
+                    <div class="row">
+                        <label class="field" title="Enabled"><span>On</span>
+                            <input type="checkbox" data-path="vehicles.${i}.enabled" data-kind="bool" ${v.enabled ? 'checked' : ''}></label>
+                        <label class="field grow"><span>Name</span>
+                            <input data-path="vehicles.${i}.name" value="${esc(v.name ?? '')}"></label>
+                        <button class="icon" data-action="remove-vehicle" data-index="${i}" title="Remove vehicle">×</button>
+                    </div>
+                    <label class="field"><span>Simulator</span>
+                        <select data-path="vehicles.${i}.simulator" data-rerender>${simulatorOptions}</select></label>
+                    <div class="row">
+                        <label class="field grow"><span>${speedLabel(v.data?.speed)}</span>
+                            <input type="number" min="0" step="any" data-path="vehicles.${i}.data.speed" data-kind="number"
+                                data-speed value="${numValue(v.data?.speed)}"></label>
+                        <label class="field grow"><span>Movement</span>
+                            <select data-path="vehicles.${i}.data.movementType">${movementOptions}</select></label>
+                    </div>
+                    ${coordRows}
+                    <label class="field"><span>Unit ID (empty: look up by name or create)</span>
+                        <input data-path="vehicles.${i}.id" data-kind="optional" value="${esc(v.id ?? '')}"></label>
+                    <div class="field"><span>Connectors</span><div class="checks">${connectorChecks}</div></div>
+                </div>`;
+            }
+
+            function renderConfig() {
+                if (!draft || !configMeta) return;
+                const form = $('config-form');
+                const scroll = form.scrollTop;
+                form.innerHTML = `
+                    <div class="section-title" style="padding-left: 0">Connectors</div>
+                    ${draft.connectors.map(renderConnector).join('')}
+                    <button class="btn add" data-action="add-connector">+ Add connector</button>
+                    <div class="section-title" style="padding-left: 0; margin-top: 12px">Vehicles</div>
+                    ${draft.vehicles.map(renderVehicle).join('')}
+                    <button class="btn add" data-action="add-vehicle">+ Add vehicle</button>`;
+                form.scrollTop = scroll;
+                drawConfigOverlay();
+            }
+
+            function drawConfigOverlay() {
+                configLayer.clearLayers();
+                if (view !== 'config' || !draft) return;
+                draft.vehicles.forEach((v, i) => {
+                    const color = cardColor(i);
+                    const d = v.data ?? {};
+                    const fields = configMeta.simulatorTypes[v.simulator] ?? [];
+                    if (fields.includes('corner1') && isPos(d.corner1) && isPos(d.corner2)) {
+                        const bounds = [
+                            [d.corner1.latitude, d.corner1.longitude],
+                            [d.corner2.latitude, d.corner2.longitude],
+                        ];
+                        L.rectangle(bounds, {
+                            color,
+                            weight: 2,
+                            dashArray: '6 4',
+                            fillOpacity: 0.05,
+                            interactive: false,
+                        }).addTo(configLayer);
+                    }
+                    for (const f of fields) {
+                        if (!isPos(d[f])) continue;
+                        L.circleMarker([d[f].latitude, d[f].longitude], {
+                            radius: 6,
+                            color: '#fff',
+                            weight: 2,
+                            fillColor: color,
+                            fillOpacity: 1,
+                        })
+                            .bindTooltip(`${esc(v.name ?? '')}: ${esc(COORD_LABELS[f] ?? f)}`)
+                            .addTo(configLayer);
+                    }
+                });
+            }
+
+            $('config-form').addEventListener('input', (e) => {
+                const el = e.target;
+                if (!el.dataset.path) return;
+                let value = el.value;
+                if (el.dataset.kind === 'bool') value = el.checked;
+                else if (el.dataset.kind === 'number') value = el.value === '' ? null : Number(el.value);
+                else if (el.dataset.kind === 'optional') value = el.value.trim() || undefined;
+                if (el.dataset.rename != null) {
+                    // Keep the vehicles' connector references in sync with the renamed ID.
+                    const old = draft.connectors[Number(el.dataset.rename)].id;
+                    for (const v of draft.vehicles) v.connectors = v.connectors.map((c) => (c === old ? value : c));
+                }
+                setPath(draft, el.dataset.path, value);
+                setDirty(true);
+                if (el.dataset.kind === 'bool') el.closest('.card').classList.toggle('disabled', !value);
+                if (el.dataset.speed != null) el.previousElementSibling.textContent = speedLabel(value);
+                if (el.dataset.coord != null || el.dataset.path.endsWith('.name')) drawConfigOverlay();
+            });
+            $('config-form').addEventListener('change', (e) => {
+                const el = e.target;
+                if (el.dataset.vehicleConnector != null) {
+                    const v = draft.vehicles[Number(el.dataset.vehicleConnector)];
+                    v.connectors = el.checked
+                        ? [...v.connectors, el.value]
+                        : v.connectors.filter((c) => c !== el.value);
+                    setDirty(true);
+                    return;
+                }
+                if (el.dataset.rerender == null) return;
+                const [kind, index] = el.dataset.path.split('.');
+                const item = draft[kind][Number(index)];
+                if (kind === 'vehicles') {
+                    fillSimulatorDefaults(item);
+                } else {
+                    // Keep only the fields the new connector type uses.
+                    const fields = configMeta.connectorTypes[item.connector] ?? [];
+                    item.data = Object.fromEntries(fields.map((f) => [f, item.data?.[f] ?? '']));
+                }
+                renderConfig();
+            });
+            $('config-form').addEventListener('click', (e) => {
+                const btn = e.target.closest('button[data-action]');
+                if (!btn) return;
+                const i = Number(btn.dataset.index);
+                switch (btn.dataset.action) {
+                    case 'add-connector': {
+                        const type = Object.keys(configMeta.connectorTypes)[0];
+                        draft.connectors.push({
+                            id: `connector-${draft.connectors.length + 1}`,
+                            connector: type,
+                            data: Object.fromEntries(configMeta.connectorTypes[type].map((f) => [f, ''])),
+                        });
+                        break;
+                    }
+                    case 'remove-connector': {
+                        const id = draft.connectors[i].id;
+                        draft.connectors.splice(i, 1);
+                        for (const v of draft.vehicles) v.connectors = v.connectors.filter((c) => c !== id);
+                        break;
+                    }
+                    case 'add-vehicle': {
+                        const v = {
+                            name: `Vehicle ${draft.vehicles.length + 1}`,
+                            enabled: true,
+                            simulator: 'RandomRouteSimulator',
+                            data: {speed: 14, movementType: 'driving'},
+                            connectors: [],
+                        };
+                        fillSimulatorDefaults(v);
+                        draft.vehicles.push(v);
+                        break;
+                    }
+                    case 'remove-vehicle':
+                        draft.vehicles.splice(i, 1);
+                        break;
+                    case 'pick': {
+                        const same = pickTarget && pickTarget.index === i && pickTarget.field === btn.dataset.field;
+                        pickTarget = same ? null : {index: i, field: btn.dataset.field};
+                        $('map').classList.toggle('picking', !!pickTarget);
+                        renderConfig();
+                        updateConfigState();
+                        return;
+                    }
+                }
+                pickTarget = null;
+                $('map').classList.remove('picking');
+                setDirty(true);
+                renderConfig();
+            });
+
+            function cancelPick() {
+                if (!pickTarget) return;
+                pickTarget = null;
+                $('map').classList.remove('picking');
+                renderConfig();
+                updateConfigState();
+            }
+            map.on('click', (e) => {
+                if (!pickTarget) return;
+                const v = draft.vehicles[pickTarget.index];
+                v.data[pickTarget.field] = {latitude: round(e.latlng.lat), longitude: round(e.latlng.lng)};
+                pickTarget = null;
+                $('map').classList.remove('picking');
+                setDirty(true);
+                renderConfig();
+            });
+            document.addEventListener('keydown', (e) => e.key === 'Escape' && cancelPick());
+
+            async function saveConfig() {
+                cancelPick();
+                saving = true;
+                showConfigErrors([]);
+                updateConfigState();
+                try {
+                    const res = await fetch('api/config', {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(draft),
+                    });
+                    const body = await res.json().catch(() => ({}));
+                    saving = false;
+                    if (res.ok) {
+                        draft = body.config;
+                        setDirty(false);
+                        renderConfig();
+                        updateConfigState('Saved and applied.');
+                        return;
+                    }
+                    showConfigErrors(body.errors ?? [body.error ?? `Request failed (${res.status})`]);
+                    // 500: the config was stored, only starting the simulations failed.
+                    setDirty(res.status !== 500);
+                } catch (err) {
+                    saving = false;
+                    setDirty(true);
+                    showConfigErrors([`Could not reach the simulator: ${err.message}`]);
+                }
+            }
+            $('config-save').addEventListener('click', saveConfig);
+            $('config-discard').addEventListener('click', () => {
+                showConfigErrors([]);
+                cancelPick();
+                loadConfig();
+            });
+            window.addEventListener('beforeunload', (e) => {
+                if (dirty) e.preventDefault();
+            });
+
+            function setView(next) {
+                view = next;
+                window.history.replaceState(null, '', next === 'config' ? '#config' : location.pathname);
+                $('live-view').hidden = next !== 'live';
+                $('config-view').hidden = next !== 'config';
+                for (const b of document.querySelectorAll('.views button')) {
+                    b.classList.toggle('active', b.dataset.view === next);
+                }
+                if (next === 'config') {
+                    configLayer.addTo(map);
+                    if (!draft) loadConfig();
+                    else renderConfig();
+                } else {
+                    cancelPick();
+                    configLayer.remove();
+                }
+            }
+            document.querySelector('.views').addEventListener('click', (e) => {
+                const b = e.target.closest('button[data-view]');
+                if (b) setView(b.dataset.view);
+            });
+
             connect();
+            if (location.hash === '#config') setView('config');
             setInterval(() => selectedId && activeTab === 'status' && renderDetail(), 5000);
         </script>
     </body>

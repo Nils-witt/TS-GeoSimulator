@@ -1,4 +1,7 @@
 import * as fs from 'node:fs';
+import * as path from 'node:path';
+import sqlite3 from 'sqlite3';
+import {Database, open} from 'sqlite';
 import {ConfigType, EventListener, LatLonPosition} from './Types';
 import {setInterval} from 'node:timers';
 import {ApplicationLogger} from './utils/Logger';
@@ -14,7 +17,9 @@ import {SqliteConnector} from './connectors/SqliteConnector';
 import {EmergencyDispatchSimulator} from './simulator/EmergencyDispatchSimulator';
 import {ApiConnector} from './connectors/ApiConnector';
 import {Unit} from './entities/Unit';
+import {randomUUID} from 'node:crypto';
 import {WebUIConnector} from './connectors/WebUIConnector';
+import {ConfigStore, validateConfig} from './config/ConfigStore';
 
 config();
 
@@ -26,14 +31,54 @@ class GeoSimulator {
     private vehicles = new Map<string, Vehicle>();
     private connectors = new Map<string, AbstractConnector>();
     private webUI: WebUIConnector | null = null;
+    private db: Database | null = null;
+    private configStore: ConfigStore | null = null;
+    private reloading: Promise<void> | null = null;
 
     constructor() {
         // Initialization code here
     }
 
-    loadConfig() {
-        const raw = fs.readFileSync(process.env.CONFIG_PATH || './data/config.json', 'utf-8');
-        this.config = JSON.parse(raw) as ConfigType;
+    async openDatabase(): Promise<void> {
+        const dbPath = process.env.DB_PATH || './data/geosimulator.sqlite';
+        fs.mkdirSync(path.dirname(dbPath), {recursive: true});
+        this.db = await open({filename: dbPath, driver: sqlite3.Database});
+        this.configStore = new ConfigStore(this.db);
+        await this.configStore.setup();
+        ApplicationLogger.info(`Using database ${dbPath}`, {service: this.constructor.name, id: 'Main'});
+    }
+
+    /**
+     * Imports a legacy config.json into the database, if the database has no config yet.
+     */
+    async importLegacyConfig(): Promise<void> {
+        const configPath = process.env.CONFIG_PATH || './data/config.json';
+        if (!(await this.configStore!.isEmpty()) || !fs.existsSync(configPath)) {
+            return;
+        }
+        const legacy = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as ConfigType;
+        for (const vehicle of legacy.vehicles ?? []) {
+            // Older configs kept speed and movement type next to the simulator data.
+            vehicle.data = {
+                ...vehicle.data,
+                speed: (vehicle.data?.['speed'] as number) ?? vehicle.speed ?? 10,
+                movementType: (vehicle.data?.['movementType'] as string) ?? vehicle.movementType ?? 'driving',
+            };
+            delete vehicle.speed;
+            delete vehicle.movementType;
+        }
+        for (const error of validateConfig(legacy)) {
+            ApplicationLogger.warn(`Imported config: ${error}`, {service: this.constructor.name, id: 'Main'});
+        }
+        await this.configStore!.save(legacy);
+        ApplicationLogger.info(`Imported ${configPath} into the database. It is no longer read.`, {
+            service: this.constructor.name,
+            id: 'Main',
+        });
+    }
+
+    async loadConfig() {
+        this.config = await this.configStore!.load();
     }
 
     async setUpSimulations() {
@@ -49,16 +94,6 @@ class GeoSimulator {
             service: this.constructor.name,
             id: 'Main',
         });
-
-        if (process.env.WEBUI_ENABLED !== 'false') {
-            this.webUI = new WebUIConnector(
-                'webui',
-                process.env.WEBUI_DB_PATH || './data/webui.sqlite',
-                parseInt(process.env.WEBUI_PORT || '8080'),
-                process.env.WEBUI_HOST || '127.0.0.1',
-            );
-            await this.webUI.setup();
-        }
 
         for (const conn of this.config.connectors) {
             ApplicationLogger.info(`Configuring connector: ${conn.connector} at ${conn.id}`, {
@@ -145,6 +180,14 @@ class GeoSimulator {
                         }
                     }
                 }
+                if (vehicle.id == null) {
+                    vehicle.id = randomUUID();
+                    ApplicationLogger.info(`Generated vehicle ID ${vehicle.id} for vehicle name: ${vehicle.name}`, {
+                        service: this.constructor.name,
+                        id: 'Main',
+                    });
+                }
+                await this.configStore?.setVehicleId(vehicle.name, vehicle.id);
             }
             if (!vehicle.name) {
                 continue;
@@ -219,15 +262,68 @@ class GeoSimulator {
         }
     }
 
-    async start() {
-        ApplicationLogger.info('Starting GeoSimulator', {service: this.constructor.name, id: 'Main'});
-        this.loadConfig();
-
+    async startSimulations() {
+        await this.loadConfig();
         await this.setUpSimulations();
 
         for (const vehicle of this.vehicles.values()) {
             vehicle.start();
         }
+    }
+
+    stopSimulations() {
+        for (const vehicle of this.vehicles.values()) {
+            vehicle.stop();
+        }
+        for (const connector of this.connectors.values()) {
+            connector.disconnect();
+        }
+        this.vehicles.clear();
+        this.connectors.clear();
+        this.webUI?.detachAll();
+    }
+
+    /**
+     * Rebuilds all connectors and vehicles from the stored config. Concurrent calls share one reload.
+     */
+    reload(): Promise<void> {
+        if (!this.reloading) {
+            ApplicationLogger.info('Reloading simulations from stored config.', {
+                service: this.constructor.name,
+                id: 'Main',
+            });
+            this.stopSimulations();
+            this.reloading = this.startSimulations().finally(() => {
+                this.reloading = null;
+            });
+        }
+        return this.reloading;
+    }
+
+    async start() {
+        ApplicationLogger.info('Starting GeoSimulator', {service: this.constructor.name, id: 'Main'});
+        await this.openDatabase();
+        await this.importLegacyConfig();
+
+        if (process.env.WEBUI_ENABLED !== 'false') {
+            this.webUI = new WebUIConnector(
+                'webui',
+                this.db!,
+                this.configStore!,
+                () => this.reload(),
+                parseInt(process.env.WEBUI_PORT || '8080'),
+                process.env.WEBUI_HOST || '127.0.0.1',
+            );
+            await this.webUI.setup();
+        }
+
+        try {
+            await this.startSimulations();
+        } catch (e) {
+            // Keep running, so that the config can be fixed in the web UI.
+            ApplicationLogger.error(`Could not start simulations: ${e}`, {service: this.constructor.name, id: 'Main'});
+        }
+        this.webUI?.notifyReloaded();
     }
 
     on(eventName: string, listener: EventListener) {

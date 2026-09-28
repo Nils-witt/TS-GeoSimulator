@@ -25,11 +25,18 @@ export interface RouteRecord {
 
 export class SqliteConnector extends AbstractConnector {
     private db: Database | null = null;
-    private path: string;
+    private path: string | null = null;
+    // Whether this connector opened the database itself (and therefore has to close it).
+    private ownsDatabase = true;
 
-    constructor(id: string, databaseFile: string) {
+    constructor(id: string, database: string | Database) {
         super(id);
-        this.path = databaseFile;
+        if (typeof database === 'string') {
+            this.path = database;
+        } else {
+            this.db = database;
+            this.ownsDatabase = false;
+        }
     }
 
     async onEntityPositionUpdate(event: EntityPositionUpdateEvent): Promise<void> {
@@ -82,16 +89,12 @@ export class SqliteConnector extends AbstractConnector {
         }
     }
 
-    public getPath(): string {
-        return this.path;
-    }
-
     connect(): void {
         /* Connection is handled in setup() */
     }
 
     disconnect(): void {
-        if (this.db) {
+        if (this.db && this.ownsDatabase) {
             this.db.close();
             ApplicationLogger.info('Disconnected from SQLite database.', {
                 service: this.constructor.name,
@@ -101,11 +104,13 @@ export class SqliteConnector extends AbstractConnector {
     }
 
     async setup(): Promise<void> {
-        this.db = await open({
-            filename: this.path,
-            driver: sqlite3.Database,
-        });
-        ApplicationLogger.info('Connected to SQLite database.', {service: this.constructor.name, id: this.getId()});
+        if (!this.db) {
+            this.db = await open({
+                filename: this.path as string,
+                driver: sqlite3.Database,
+            });
+            ApplicationLogger.info('Connected to SQLite database.', {service: this.constructor.name, id: this.getId()});
+        }
 
         await this.db.run(`CREATE TABLE IF NOT EXISTS positions
                            (

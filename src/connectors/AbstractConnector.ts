@@ -41,6 +41,14 @@ export abstract class AbstractConnector {
         });
     }
 
+    /**
+     * Forgets all attached entities, e.g. before the simulations are rebuilt.
+     * Listeners stay registered on the old entities, which must be stopped by the caller.
+     */
+    detachAll(): void {
+        this.entities.clear();
+    }
+
     public getId(): string {
         return this.id;
     }
