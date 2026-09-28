@@ -36,28 +36,22 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Run ESLint
-        id: eslint
+      - name: Run oxlint
+        id: lint
         continue-on-error: true
-        env:
-          SARIF_ESLINT_IGNORE_SUPPRESSED: "true"
-        run: npx eslint .
-          --format @microsoft/eslint-formatter-sarif
-          --output-file eslint-results.sarif
+        run: npx oxlint --format sarif > oxlint-results.sarif
 
       # Forks and Dependabot PRs get a read-only token and cannot upload code scanning results
       - name: Upload analysis results to GitHub
-        if: always() && hashFiles('eslint-results.sarif') != '' && github.event.pull_request.head.repo.fork != true && github.actor != 'dependabot[bot]'
+        if: always() && hashFiles('oxlint-results.sarif') != '' && github.event.pull_request.head.repo.fork != true && github.actor != 'dependabot[bot]'
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: eslint-results.sarif
+          sarif_file: oxlint-results.sarif
           wait-for-processing: true
 
       - name: Type-check
         run: npx tsc --noEmit
 
-      - name: Fail on ESLint errors
-        if: steps.eslint.outcome == 'failure'
-        run: |
-          echo "::error::ESLint reported errors, see the Code scanning results."
-          exit 1
+      - name: Fail on lint errors
+        if: steps.lint.outcome == 'failure'
+        run: npx oxlint --format github
