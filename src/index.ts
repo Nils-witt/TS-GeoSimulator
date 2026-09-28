@@ -14,6 +14,7 @@ import {SqliteConnector} from './connectors/SqliteConnector';
 import {EmergencyDispatchSimulator} from './simulator/EmergencyDispatchSimulator';
 import {ApiConnector} from './connectors/ApiConnector';
 import {Unit} from './entities/Unit';
+import {WebUIConnector} from './connectors/WebUIConnector';
 
 config();
 
@@ -24,6 +25,7 @@ class GeoSimulator {
 
     private vehicles = new Map<string, Vehicle>();
     private connectors = new Map<string, AbstractConnector>();
+    private webUI: WebUIConnector | null = null;
 
     constructor() {
         // Initialization code here
@@ -47,6 +49,16 @@ class GeoSimulator {
             service: this.constructor.name,
             id: 'Main',
         });
+
+        if (process.env.WEBUI_ENABLED !== 'false') {
+            this.webUI = new WebUIConnector(
+                'webui',
+                process.env.WEBUI_DB_PATH || './data/webui.sqlite',
+                parseInt(process.env.WEBUI_PORT || '8080'),
+                process.env.WEBUI_HOST || '127.0.0.1',
+            );
+            await this.webUI.setup();
+        }
 
         for (const conn of this.config.connectors) {
             ApplicationLogger.info(`Configuring connector: ${conn.connector} at ${conn.id}`, {
@@ -184,6 +196,9 @@ class GeoSimulator {
             }
             await simVehicle.setup(simulatorInstance);
             this.vehicles.set(vehicle.id as UUID, simVehicle);
+
+            // The web UI shows every vehicle, independent of its configured connectors
+            this.webUI?.attachEntity(simVehicle);
 
             // Attach connectors to vehicle
             for (const connId of vehicle.connectors) {

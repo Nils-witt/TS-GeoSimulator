@@ -1,11 +1,27 @@
 import {AbstractConnector} from './AbstractConnector';
 import sqlite3 from 'sqlite3';
 import {Database, open} from 'sqlite';
-import {TimedLatLonPosition} from '../Types';
+import {LatLonPosition, TimedLatLonPosition} from '../Types';
 import {ApplicationLogger} from '../utils/Logger';
 import {EntityPositionUpdateEvent} from '../events/EntityPositionUpdateEvent';
 import {EntityStatusEvent} from '../events/EntityStatusEvent';
 import {EntityRouteEvent} from '../events/EntityRouteEvent';
+
+export interface PositionRecord {
+    latitude: number | null;
+    longitude: number | null;
+    timestamp: number;
+}
+
+export interface StatusRecord {
+    status: number;
+    timestamp: number;
+}
+
+export interface RouteRecord {
+    route: LatLonPosition[];
+    timestamp: number;
+}
 
 export class SqliteConnector extends AbstractConnector {
     private db: Database | null = null;
@@ -22,7 +38,7 @@ export class SqliteConnector extends AbstractConnector {
             const position = event.getPosition();
             if (position) {
                 let timestamp = Date.now();
-                if (' timestamp' in position && position) {
+                if ('timestamp' in position) {
                     timestamp = (position as TimedLatLonPosition).timestamp;
                 }
                 await this.db.run(
@@ -64,6 +80,10 @@ export class SqliteConnector extends AbstractConnector {
                 timestamp,
             );
         }
+    }
+
+    public getPath(): string {
+        return this.path;
     }
 
     connect(): void {
@@ -109,6 +129,47 @@ export class SqliteConnector extends AbstractConnector {
                                route     TEXT    NOT NULL,
                                timestamp INTEGER NOT NULL
                            )`);
+        await this.db.run('CREATE INDEX IF NOT EXISTS positions_entity ON positions (entity_id, timestamp)');
+        await this.db.run('CREATE INDEX IF NOT EXISTS unit_status_entity ON unit_status (entity_id, timestamp)');
+        await this.db.run('CREATE INDEX IF NOT EXISTS unit_routes_entity ON unit_routes (entity_id, timestamp)');
         ApplicationLogger.info('SQLite database setup complete.', {service: this.constructor.name, id: this.getId()});
+    }
+
+    // The history queries return the newest `limit` rows in chronological order.
+
+    async getPositions(entityId: string, limit: number): Promise<PositionRecord[]> {
+        if (!this.db) {
+            return [];
+        }
+        const rows = await this.db.all<PositionRecord[]>(
+            'SELECT latitude, longitude, timestamp FROM positions WHERE entity_id = ? ORDER BY timestamp DESC, id DESC LIMIT ?',
+            entityId,
+            limit,
+        );
+        return rows.reverse();
+    }
+
+    async getStatuses(entityId: string, limit: number): Promise<StatusRecord[]> {
+        if (!this.db) {
+            return [];
+        }
+        const rows = await this.db.all<StatusRecord[]>(
+            'SELECT status, timestamp FROM unit_status WHERE entity_id = ? ORDER BY timestamp DESC, id DESC LIMIT ?',
+            entityId,
+            limit,
+        );
+        return rows.reverse();
+    }
+
+    async getRoutes(entityId: string, limit: number): Promise<RouteRecord[]> {
+        if (!this.db) {
+            return [];
+        }
+        const rows = await this.db.all<{route: string; timestamp: number}[]>(
+            'SELECT route, timestamp FROM unit_routes WHERE entity_id = ? ORDER BY timestamp DESC, id DESC LIMIT ?',
+            entityId,
+            limit,
+        );
+        return rows.reverse().map((r) => ({route: JSON.parse(r.route) as LatLonPosition[], timestamp: r.timestamp}));
     }
 }

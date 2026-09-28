@@ -82,6 +82,10 @@ export class Vehicle extends AbstractEntity {
         this.status = status;
     }
 
+    public getSimulatorName(): string | null {
+        return this.simulator ? this.simulator.constructor.name : null;
+    }
+
     public getRoute(): LatLonPosition[] | null {
         if (this.simulator) {
             return this.simulator.getRoute();

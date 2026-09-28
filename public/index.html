@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>GeoSimulator</title>
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <style>
+            :root {
+                --bg: #f6f7f9;
+                --panel: #ffffff;
+                --border: #e2e5ea;
+                --text: #1c2028;
+                --muted: #6b7280;
+                --accent: #2563eb;
+                --hover: #f1f4f9;
+                --selected: #e8effd;
+            }
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --bg: #111418;
+                    --panel: #1a1e24;
+                    --border: #2b313a;
+                    --text: #e6e9ee;
+                    --muted: #8b93a1;
+                    --accent: #60a5fa;
+                    --hover: #222831;
+                    --selected: #1e2a3d;
+                }
+            }
+            * {
+                box-sizing: border-box;
+            }
+            html,
+            body {
+                margin: 0;
+                height: 100%;
+                font:
+                    14px/1.4 system-ui,
+                    -apple-system,
+                    'Segoe UI',
+                    Roboto,
+                    sans-serif;
+                color: var(--text);
+                background: var(--bg);
+            }
+            .app {
+                display: grid;
+                grid-template-columns: 340px 1fr;
+                height: 100%;
+            }
+            aside {
+                display: flex;
+                flex-direction: column;
+                min-height: 0;
+                background: var(--panel);
+                border-right: 1px solid var(--border);
+            }
+            header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 12px 16px;
+                border-bottom: 1px solid var(--border);
+            }
+            header h1 {
+                margin: 0;
+                font-size: 16px;
+            }
+            .conn {
+                font-size: 12px;
+                color: var(--muted);
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            .dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: #9ca3af;
+            }
+            .conn.live .dot {
+                background: #16a34a;
+            }
+            .conn.down .dot {
+                background: #dc2626;
+            }
+            .section-title {
+                padding: 10px 16px 4px;
+                font-size: 11px;
+                font-weight: 600;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+                color: var(--muted);
+            }
+            #vehicles {
+                list-style: none;
+                margin: 0;
+                padding: 0 8px 8px;
+                overflow: auto;
+                max-height: 40%;
+                flex-shrink: 0;
+            }
+            #vehicles li {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+                padding: 8px;
+                border-radius: 6px;
+                cursor: pointer;
+            }
+            #vehicles li:hover {
+                background: var(--hover);
+            }
+            #vehicles li.selected {
+                background: var(--selected);
+            }
+            .v-name {
+                font-weight: 600;
+            }
+            .v-sub {
+                font-size: 12px;
+                color: var(--muted);
+            }
+            .badge {
+                flex-shrink: 0;
+                min-width: 26px;
+                height: 26px;
+                border-radius: 6px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: 700;
+                color: #fff;
+            }
+            #detail {
+                flex: 1;
+                min-height: 0;
+                overflow: auto;
+                border-top: 1px solid var(--border);
+            }
+            .empty {
+                padding: 16px;
+                color: var(--muted);
+            }
+            dl {
+                display: grid;
+                grid-template-columns: auto 1fr;
+                gap: 4px 12px;
+                margin: 0;
+                padding: 4px 16px 8px;
+            }
+            dt {
+                color: var(--muted);
+            }
+            dd {
+                margin: 0;
+                font-variant-numeric: tabular-nums;
+                word-break: break-all;
+            }
+            .tabs {
+                display: flex;
+                gap: 4px;
+                padding: 8px 16px 0;
+                border-bottom: 1px solid var(--border);
+            }
+            .tabs button {
+                border: 0;
+                background: none;
+                color: var(--muted);
+                padding: 6px 10px;
+                cursor: pointer;
+                border-bottom: 2px solid transparent;
+                font: inherit;
+            }
+            .tabs button.active {
+                color: var(--text);
+                border-bottom-color: var(--accent);
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                font-variant-numeric: tabular-nums;
+            }
+            th,
+            td {
+                text-align: left;
+                padding: 6px 16px;
+                border-bottom: 1px solid var(--border);
+            }
+            th {
+                font-size: 12px;
+                font-weight: 600;
+                color: var(--muted);
+            }
+            tr.clickable {
+                cursor: pointer;
+            }
+            tr.clickable:hover {
+                background: var(--hover);
+            }
+            tr.active {
+                background: var(--selected);
+            }
+            .toolbar {
+                display: flex;
+                gap: 12px;
+                padding: 8px 16px;
+                font-size: 13px;
+            }
+            #map {
+                height: 100%;
+            }
+            @media (max-width: 760px) {
+                .app {
+                    grid-template-columns: 1fr;
+                    grid-template-rows: 45vh 1fr;
+                }
+                aside {
+                    order: 2;
+                    border-right: 0;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="app">
+            <aside>
+                <header>
+                    <h1>GeoSimulator</h1>
+                    <span class="conn" id="conn"><span class="dot"></span><span id="conn-text">connecting…</span></span>
+                </header>
+                <div class="section-title">Vehicles</div>
+                <ul id="vehicles"></ul>
+                <div id="detail"><div class="empty">Select a vehicle to see its route and history.</div></div>
+            </aside>
+            <div id="map"></div>
+        </div>
+
+        <script>
+            const STATUS = {
+                1: {label: 'Available (radio)', color: '#16a34a'},
+                2: {label: 'Available (station)', color: '#15803d'},
+                3: {label: 'Responding', color: '#ea580c'},
+                4: {label: 'On scene', color: '#dc2626'},
+                5: {label: 'Request to talk', color: '#ca8a04'},
+                6: {label: 'Not available', color: '#6b7280'},
+                7: {label: 'Patient loaded', color: '#9333ea'},
+                8: {label: 'At destination', color: '#7c3aed'},
+            };
+            const statusInfo = (s) => STATUS[s] ?? {label: s == null ? 'Unknown' : `Status ${s}`, color: '#6b7280'};
+
+            const vehicles = new Map(); // id -> summary
+            const layers = new Map(); // id -> {marker, route}
+            let selectedId = null;
+            let history = null; // history of selected vehicle
+            let activeTab = 'status';
+            let shownRouteIndex = null; // index into history.routes, null = current route
+            let showTrail = true;
+            let fitted = false;
+
+            const map = L.map('map').setView([50.7374, 7.0982], 12);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap contributors',
+            }).addTo(map);
+            const trailLayer = L.polyline([], {color: '#2563eb', weight: 3, opacity: 0.6, dashArray: '4 6'}).addTo(map);
+            const historicRouteLayer = L.polyline([], {color: '#a855f7', weight: 5, opacity: 0.8}).addTo(map);
+
+            const $ = (id) => document.getElementById(id);
+            const esc = (s) =>
+                String(s).replace(
+                    /[&<>"']/g,
+                    (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c],
+                );
+            const toLatLngs = (route) => (route || []).map((p) => [p.latitude, p.longitude]);
+            const fmtTime = (ts) => new Date(ts).toLocaleTimeString();
+            const fmtDateTime = (ts) => new Date(ts).toLocaleString();
+            const fmtCoord = (p) => (p ? `${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}` : '—');
+            const fmtDuration = (ms) => {
+                const s = Math.round(ms / 1000);
+                if (s < 60) return `${s}s`;
+                const m = Math.floor(s / 60);
+                if (m < 60) return `${m}m ${s % 60}s`;
+                return `${Math.floor(m / 60)}h ${m % 60}m`;
+            };
+            const fmtDistance = (m) => (m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`);
+            function routeLength(route) {
+                let total = 0;
+                for (let i = 1; i < route.length; i++) {
+                    total += map.distance(
+                        [route[i - 1].latitude, route[i - 1].longitude],
+                        [route[i].latitude, route[i].longitude],
+                    );
+                }
+                return total;
+            }
+
+            // --- Map ---
+
+            function updateLayers(v) {
+                let l = layers.get(v.id);
+                if (!l) {
+                    l = {
+                        marker: L.circleMarker([0, 0], {radius: 9, weight: 2, color: '#fff', fillOpacity: 1}),
+                        route: L.polyline([], {weight: 3, opacity: 0.5}).addTo(map),
+                    };
+                    l.marker.bindTooltip('', {direction: 'top', offset: [0, -8]});
+                    l.marker.on('click', () => select(v.id));
+                    l.route.on('click', () => select(v.id));
+                    layers.set(v.id, l);
+                }
+                const info = statusInfo(v.status);
+                const selected = v.id === selectedId;
+                if (v.position) {
+                    l.marker.setLatLng([v.position.latitude, v.position.longitude]).addTo(map);
+                } else {
+                    l.marker.remove();
+                }
+                l.marker.setStyle({fillColor: info.color, radius: selected ? 11 : 9});
+                l.marker.setTooltipContent(`<b>${esc(v.name)}</b><br>${v.status ?? '?'} · ${esc(info.label)}`);
+                l.route.setLatLngs(toLatLngs(v.route));
+                l.route.setStyle({color: info.color, weight: selected ? 5 : 3, opacity: selected ? 0.9 : 0.45});
+                if (selected) {
+                    l.route.bringToFront();
+                    l.marker.bringToFront();
+                }
+            }
+
+            function fitAll() {
+                const bounds = L.latLngBounds([]);
+                for (const v of vehicles.values()) {
+                    if (v.position) bounds.extend([v.position.latitude, v.position.longitude]);
+                    for (const p of v.route || []) bounds.extend([p.latitude, p.longitude]);
+                }
+                if (bounds.isValid()) {
+                    map.fitBounds(bounds, {padding: [40, 40], maxZoom: 15});
+                    fitted = true;
+                }
+            }
+
+            function updateOverlays() {
+                const trail = showTrail && history ? history.positions.filter((p) => p.latitude != null) : [];
+                trailLayer.setLatLngs(toLatLngs(trail));
+                const hist = history && shownRouteIndex != null ? history.routes[shownRouteIndex] : null;
+                historicRouteLayer.setLatLngs(hist ? toLatLngs(hist.route) : []);
+                if (hist) historicRouteLayer.bringToFront();
+            }
+
+            // --- Sidebar ---
+
+            function renderList() {
+                const list = $('vehicles');
+                const sorted = [...vehicles.values()].sort((a, b) => a.name.localeCompare(b.name));
+                if (sorted.length === 0) {
+                    list.innerHTML = '<li class="empty">No vehicles running.</li>';
+                    return;
+                }
+                list.innerHTML = sorted
+                    .map((v) => {
+                        const info = statusInfo(v.status);
+                        return `<li data-id="${esc(v.id)}" class="${v.id === selectedId ? 'selected' : ''}">
+                            <span class="badge" style="background:${info.color}" title="${esc(info.label)}">${v.status ?? '?'}</span>
+                            <span>
+                                <div class="v-name">${esc(v.name)}</div>
+                                <div class="v-sub">${esc(info.label)} · ${esc(v.simulator ?? '')}</div>
+                            </span>
+                        </li>`;
+                    })
+                    .join('');
+            }
+            $('vehicles').addEventListener('click', (e) => {
+                const li = e.target.closest('li[data-id]');
+                if (li) select(li.dataset.id);
+            });
+
+            function renderDetail() {
+                const v = vehicles.get(selectedId);
+                const el = $('detail');
+                if (!v) {
+                    el.innerHTML = '<div class="empty">Select a vehicle to see its route and history.</div>';
+                    return;
+                }
+                const info = statusInfo(v.status);
+                const remaining = v.route && v.route.length ? fmtDistance(routeLength(v.route)) : '—';
+                let body = '';
+                if (!history) {
+                    body = '<div class="empty">Loading history…</div>';
+                } else if (activeTab === 'status') {
+                    const rows = [...history.statuses].reverse();
+                    body = rows.length
+                        ? `<table><tr><th>Time</th><th>Status</th><th>Duration</th></tr>${rows
+                              .map((s, i) => {
+                                  const end = i === 0 ? Date.now() : rows[i - 1].timestamp;
+                                  const si = statusInfo(s.status);
+                                  return `<tr><td>${fmtTime(s.timestamp)}</td>
+                                    <td><span class="badge" style="background:${si.color};height:20px;min-width:20px;font-size:12px">${s.status}</span> ${esc(si.label)}</td>
+                                    <td>${fmtDuration(end - s.timestamp)}</td></tr>`;
+                              })
+                              .join('')}</table>`
+                        : '<div class="empty">No status changes recorded yet.</div>';
+                } else if (activeTab === 'routes') {
+                    const rows = history.routes.map((r, i) => ({r, i})).reverse();
+                    body = rows.length
+                        ? `<div class="toolbar">Click a route to highlight it on the map.</div>
+                           <table><tr><th>Started</th><th>Points</th><th>Length</th></tr>${rows
+                               .map(
+                                   ({
+                                       r,
+                                       i,
+                                   }) => `<tr class="clickable ${i === shownRouteIndex ? 'active' : ''}" data-route="${i}">
+                                    <td>${fmtTime(r.timestamp)}</td><td>${r.route.length}</td><td>${fmtDistance(routeLength(r.route))}</td></tr>`,
+                               )
+                               .join('')}</table>`
+                        : '<div class="empty">No routes recorded yet.</div>';
+                } else {
+                    const rows = history.positions.slice(-200).reverse();
+                    body = `<div class="toolbar"><label><input type="checkbox" id="trail" ${showTrail ? 'checked' : ''}> Show trail on map</label>
+                            <span style="color:var(--muted)">${history.positions.length} points</span></div>
+                        <table><tr><th>Time</th><th>Position</th></tr>${rows
+                            .map(
+                                (p) =>
+                                    `<tr><td>${fmtTime(p.timestamp)}</td><td>${p.latitude == null ? '—' : fmtCoord(p)}</td></tr>`,
+                            )
+                            .join('')}</table>`;
+                }
+                el.innerHTML = `
+                    <div class="section-title">Details</div>
+                    <dl>
+                        <dt>Name</dt><dd>${esc(v.name)}</dd>
+                        <dt>ID</dt><dd>${esc(v.id)}</dd>
+                        <dt>Simulator</dt><dd>${esc(v.simulator ?? '—')}</dd>
+                        <dt>Status</dt><dd>${v.status ?? '?'} · ${esc(info.label)}</dd>
+                        <dt>Position</dt><dd>${fmtCoord(v.position)}</dd>
+                        <dt>Route</dt><dd>${v.route?.length ?? 0} points · ${remaining}</dd>
+                        <dt>Updated</dt><dd>${fmtDateTime(v.updatedAt)}</dd>
+                    </dl>
+                    <div class="tabs">
+                        ${['status', 'routes', 'positions']
+                            .map(
+                                (t) =>
+                                    `<button data-tab="${t}" class="${t === activeTab ? 'active' : ''}">${t[0].toUpperCase() + t.slice(1)}</button>`,
+                            )
+                            .join('')}
+                    </div>
+                    ${body}`;
+            }
+            $('detail').addEventListener('click', (e) => {
+                const tab = e.target.closest('button[data-tab]');
+                if (tab) {
+                    activeTab = tab.dataset.tab;
+                    renderDetail();
+                    return;
+                }
+                const row = e.target.closest('tr[data-route]');
+                if (row) {
+                    const i = Number(row.dataset.route);
+                    shownRouteIndex = shownRouteIndex === i ? null : i;
+                    updateOverlays();
+                    if (shownRouteIndex != null) map.fitBounds(historicRouteLayer.getBounds(), {padding: [40, 40]});
+                    renderDetail();
+                }
+            });
+            $('detail').addEventListener('change', (e) => {
+                if (e.target.id === 'trail') {
+                    showTrail = e.target.checked;
+                    updateOverlays();
+                }
+            });
+
+            // --- Data ---
+
+            async function select(id) {
+                const previous = selectedId;
+                selectedId = id;
+                history = null;
+                shownRouteIndex = null;
+                for (const pid of [previous, id]) if (vehicles.has(pid)) updateLayers(vehicles.get(pid));
+                renderList();
+                renderDetail();
+                updateOverlays();
+                const v = vehicles.get(id);
+                if (v?.position) map.panTo([v.position.latitude, v.position.longitude]);
+                const res = await fetch(`api/vehicles/${encodeURIComponent(id)}/history`);
+                if (selectedId !== id || !res.ok) return;
+                history = await res.json();
+                renderDetail();
+                updateOverlays();
+            }
+
+            async function loadVehicles() {
+                const res = await fetch('api/vehicles');
+                const list = await res.json();
+                vehicles.clear();
+                for (const v of list) {
+                    vehicles.set(v.id, v);
+                    updateLayers(v);
+                }
+                renderList();
+                renderDetail();
+                if (!fitted) fitAll();
+            }
+
+            let detailTimer = null;
+            function scheduleDetailRender() {
+                // Position events arrive every few seconds per vehicle; batch detail re-renders.
+                if (detailTimer) return;
+                detailTimer = setTimeout(() => {
+                    detailTimer = null;
+                    renderDetail();
+                }, 500);
+            }
+
+            function applyEvent(type, data) {
+                const v = vehicles.get(data.id);
+                if (!v) {
+                    loadVehicles();
+                    return;
+                }
+                const selected = data.id === selectedId;
+                if (type === 'position') {
+                    v.position = data.latitude == null ? null : {latitude: data.latitude, longitude: data.longitude};
+                    if (selected && history) history.positions.push(data);
+                } else if (type === 'status') {
+                    v.status = data.status;
+                    if (selected && history) history.statuses.push(data);
+                    renderList();
+                } else if (type === 'route') {
+                    v.route = data.route;
+                    if (selected && history) history.routes.push({route: data.route, timestamp: data.timestamp});
+                }
+                v.updatedAt = data.timestamp;
+                updateLayers(v);
+                if (selected) {
+                    if (type === 'position') {
+                        if (showTrail && data.latitude != null) trailLayer.addLatLng([data.latitude, data.longitude]);
+                        scheduleDetailRender();
+                    } else {
+                        renderDetail();
+                    }
+                }
+            }
+
+            function connect() {
+                const es = new EventSource('api/events');
+                es.onopen = () => {
+                    $('conn').className = 'conn live';
+                    $('conn-text').textContent = 'live';
+                    loadVehicles().then(() => selectedId && select(selectedId));
+                };
+                es.onerror = () => {
+                    $('conn').className = 'conn down';
+                    $('conn-text').textContent = 'reconnecting…';
+                };
+                for (const type of ['position', 'status', 'route']) {
+                    es.addEventListener(type, (e) => applyEvent(type, JSON.parse(e.data)));
+                }
+            }
+
+            connect();
+            setInterval(() => selectedId && activeTab === 'status' && renderDetail(), 5000);
+        </script>
+    </body>
+</html>
