@@ -1,4 +1,4 @@
-import {LatLonPosition, SimulatorCommand, SimulatorDetails} from '../Types';
+import {LatLonPosition, Motion, SimulatedPosition, SimulatorCommand, SimulatorDetails} from '../Types';
 import {UUID} from 'crypto';
 import {randomUUID} from 'node:crypto';
 import {Emitter} from '../utils/Emitter';
@@ -7,8 +7,10 @@ import {DetailsEvent, PositionUpdateEvent, StatusEvent, RouteEvent} from '../eve
 /** A control command that is valid but cannot be applied in the simulator's current state. */
 export class ControlError extends Error {}
 
+const STATIONARY: Motion = {speed: 0, course: null};
+
 export abstract class AbstractSimulator extends Emitter {
-    private position: LatLonPosition | null = null;
+    private position: SimulatedPosition | null = null;
     private id: UUID;
     private status = 6;
 
@@ -20,7 +22,7 @@ export abstract class AbstractSimulator extends Emitter {
         this.id = id;
     }
 
-    getPosition(): LatLonPosition | null {
+    getPosition(): SimulatedPosition | null {
         return this.position;
     }
 
@@ -33,10 +35,13 @@ export abstract class AbstractSimulator extends Emitter {
         this.emit(new RouteEvent(this, route));
     }
 
-    /** Protected helper for subclasses to update the simulator position and emit a PositionUpdateEvent. */
-    protected setPosition(position: LatLonPosition | null): void {
-        this.position = position;
-        this.emit(new PositionUpdateEvent(this, position));
+    /**
+     * Protected helper for subclasses to update the simulator position and emit a PositionUpdateEvent.
+     * Without `motion` the vehicle is standing still.
+     */
+    protected setPosition(position: LatLonPosition | null, motion: Motion = STATIONARY): void {
+        this.position = position && {latitude: position.latitude, longitude: position.longitude, ...motion};
+        this.emit(new PositionUpdateEvent(this, this.position));
     }
 
     protected setStatus(status: number): void {

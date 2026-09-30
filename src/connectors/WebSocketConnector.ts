@@ -2,6 +2,7 @@ import {ApplicationLogger} from '../utils/Logger';
 import {AbstractConnector} from './AbstractConnector';
 import {randomUUID} from 'node:crypto';
 import {PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
+import {motionOf} from '../utils/Geo';
 
 interface WebSocketMessage {
     command: string;
@@ -117,6 +118,7 @@ export class WebSocketConnector extends AbstractConnector {
         this.send('position', event.getSource().getId(), {
             latitude: position ? position.latitude : null,
             longitude: position ? position.longitude : null,
+            ...motionOf(position),
         });
         return Promise.resolve();
     }

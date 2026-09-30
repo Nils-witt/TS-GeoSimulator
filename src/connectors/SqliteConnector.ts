@@ -3,11 +3,15 @@ import sqlite3 from 'sqlite3';
 import {Database, open} from 'sqlite';
 import {LatLonPosition, TimedLatLonPosition} from '../Types';
 import {ApplicationLogger} from '../utils/Logger';
+import {motionOf} from '../utils/Geo';
 import {PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
 
 export interface PositionRecord {
     latitude: number | null;
     longitude: number | null;
+    // Meters per second and degrees from north; null if the position carried none.
+    speed: number | null;
+    course: number | null;
     timestamp: number;
 }
 
@@ -46,11 +50,14 @@ export class SqliteConnector extends AbstractConnector {
                 if ('timestamp' in position) {
                     timestamp = (position as TimedLatLonPosition).timestamp;
                 }
+                const {speed, course} = motionOf(position);
                 await this.db.run(
-                    'INSERT INTO positions (entity_id, latitude, longitude, timestamp) VALUES (?, ?, ?, ?)',
+                    'INSERT INTO positions (entity_id, latitude, longitude, speed, course, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
                     entity.getId(),
                     position.latitude,
                     position.longitude,
+                    speed,
+                    course,
                     timestamp,
                 );
             }
@@ -116,8 +123,17 @@ export class SqliteConnector extends AbstractConnector {
                                entity_id TEXT    NOT NULL,
                                latitude  REAL    NULL,
                                longitude REAL    NULL,
+                               speed     REAL    NULL,
+                               course    REAL    NULL,
                                timestamp INTEGER NOT NULL
                            )`);
+        // Databases created before speed and course were recorded lack these columns.
+        const positionColumns = await this.db.all<{name: string}[]>('PRAGMA table_info(positions)');
+        for (const column of ['speed', 'course']) {
+            if (!positionColumns.some((c) => c.name === column)) {
+                await this.db.run(`ALTER TABLE positions ADD COLUMN ${column} REAL NULL`);
+            }
+        }
         await this.db.run(`CREATE TABLE IF NOT EXISTS unit_status
                            (
                                id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -145,7 +161,7 @@ export class SqliteConnector extends AbstractConnector {
             return [];
         }
         const rows = await this.db.all<PositionRecord[]>(
-            'SELECT latitude, longitude, timestamp FROM positions WHERE entity_id = ? ORDER BY timestamp DESC, id DESC LIMIT ?',
+            'SELECT latitude, longitude, speed, course, timestamp FROM positions WHERE entity_id = ? ORDER BY timestamp DESC, id DESC LIMIT ?',
             entityId,
             limit,
         );

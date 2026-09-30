@@ -480,6 +480,8 @@
             const fmtTime = (ts) => new Date(ts).toLocaleTimeString();
             const fmtDateTime = (ts) => new Date(ts).toLocaleString();
             const fmtCoord = (p) => (p ? `${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}` : '—');
+            const fmtSpeed = (p) => (p?.speed == null ? '—' : `${Math.round(p.speed * 3.6)} km/h`);
+            const fmtCourse = (p) => (p?.course == null ? '—' : `${Math.round(p.course) % 360}°`);
             const fmtDuration = (ms) => {
                 const s = Math.round(ms / 1000);
                 if (s < 60) return `${s}s`;
@@ -649,10 +651,10 @@
                     const rows = history.positions.slice(-200).reverse();
                     body = `<div class="toolbar"><label><input type="checkbox" id="trail" ${showTrail ? 'checked' : ''}> Show trail on map</label>
                             <span style="color:var(--muted)">${history.positions.length} points</span></div>
-                        <table><tr><th>Time</th><th>Position</th></tr>${rows
+                        <table><tr><th>Time</th><th>Position</th><th>Speed</th><th>Course</th></tr>${rows
                             .map(
                                 (p) =>
-                                    `<tr><td>${fmtTime(p.timestamp)}</td><td>${p.latitude == null ? '—' : fmtCoord(p)}</td></tr>`,
+                                    `<tr><td>${fmtTime(p.timestamp)}</td><td>${p.latitude == null ? '—' : fmtCoord(p)}</td><td>${fmtSpeed(p)}</td><td>${fmtCourse(p)}</td></tr>`,
                             )
                             .join('')}</table>`;
                 }
@@ -664,6 +666,7 @@
                         <dt>Simulator</dt><dd>${esc(v.simulator ?? '—')}</dd>
                         <dt>Status</dt><dd>${v.status ?? '?'} · ${esc(info.label)}</dd>
                         <dt>Position</dt><dd>${fmtCoord(v.position)}</dd>
+                        <dt>Speed</dt><dd>${fmtSpeed(v.position)} · ${fmtCourse(v.position)}</dd>
                         <dt>Route</dt><dd>${v.route?.length ?? 0} points · ${remaining}</dd>
                         <dt>Updated</dt><dd>${fmtDateTime(v.updatedAt)}</dd>
                     </dl>
@@ -910,7 +913,15 @@
                 }
                 const selected = data.id === selectedId;
                 if (type === 'position') {
-                    v.position = data.latitude == null ? null : {latitude: data.latitude, longitude: data.longitude};
+                    v.position =
+                        data.latitude == null
+                            ? null
+                            : {
+                                  latitude: data.latitude,
+                                  longitude: data.longitude,
+                                  speed: data.speed,
+                                  course: data.course,
+                              };
                     if (selected && history) history.positions.push(data);
                 } else if (type === 'status') {
                     v.status = data.status;

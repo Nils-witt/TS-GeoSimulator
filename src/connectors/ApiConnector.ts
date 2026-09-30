@@ -3,7 +3,7 @@
  * ---------------
  * Client for the go-unit-mangement JSON API (see api/openapi.yaml of that project).
  * Exports: ApiConnector
- * Purpose: load and create units, push simulated positions via PATCH /api/units/{id}
+ * Purpose: load and create units, push simulated positions (with speed and course) via PUT /api/units/{id}/position
  * and keep the local unit cache in sync through the /api/units/events stream.
  */
 
@@ -13,11 +13,15 @@ import {ApplicationLogger} from '../utils/Logger';
 import {UUID} from 'crypto';
 import {LatLonPosition, TimedLatLonPosition} from '../Types';
 import {PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
+import {motionOf} from '../utils/Geo';
 
 interface ApiPosition {
     lat: number;
     lon: number;
     height?: number | null;
+    // Meters per second and degrees clockwise from true north; null when unknown.
+    speed?: number | null;
+    course?: number | null;
     timestamp?: string | null;
 }
 
@@ -233,7 +237,7 @@ export class ApiConnector extends AbstractConnector {
     }
 
     private toApiPosition(position: LatLonPosition | TimedLatLonPosition): ApiPosition {
-        const apiPosition: ApiPosition = {lat: position.latitude, lon: position.longitude};
+        const apiPosition: ApiPosition = {lat: position.latitude, lon: position.longitude, ...motionOf(position)};
         if ('timestamp' in position) {
             apiPosition.timestamp = new Date(position.timestamp).toISOString();
         }

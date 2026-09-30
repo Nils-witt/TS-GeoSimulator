@@ -1,5 +1,5 @@
 import {AbstractSimulator, ControlError} from './AbstractSimulator';
-import {LatLonPosition, SimulatorAction, SimulatorCommand} from '../Types';
+import {LatLonPosition, SimulatedPosition, SimulatorAction, SimulatorCommand} from '../Types';
 import {ApplicationLogger} from '../utils/Logger';
 import {RouteSimulator, RouteSimulatorOptions} from './RouteSimulator';
 import {randomPositionInBox} from '../utils/Geo';
@@ -168,7 +168,10 @@ export abstract class MultiRouteSimulator<O extends MultiRouteSimulatorOptions> 
     protected async prepareLeg(start: LatLonPosition, end: LatLonPosition): Promise<RouteSimulator | null> {
         const leg = new RouteSimulator({...this.options.routeSimulatorOptions, start, end});
         leg.on('positionUpdate', (event) => {
-            this.setPosition((event as PositionUpdateEvent<AbstractSimulator>).getPosition());
+            const position = (
+                event as PositionUpdateEvent<AbstractSimulator>
+            ).getPosition() as SimulatedPosition | null;
+            this.setPosition(position, position ? {speed: position.speed, course: position.course} : undefined);
         });
         leg.on('routeUpdate', (event) => {
             this.setRoute((event as RouteEvent<AbstractSimulator>).getRoute());

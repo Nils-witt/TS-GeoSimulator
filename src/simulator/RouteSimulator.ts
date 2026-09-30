@@ -92,7 +92,7 @@ export class RouteSimulator extends AbstractSimulator {
         }
         this.currentIndex = 0;
         this.distanceIntoSegment = 0;
-        this.setPosition(this.getRoute()[0]);
+        this.setPosition(this.getRoute()[0], {speed: 0, course: this.segmentCourse(0)});
 
         ApplicationLogger.info('Starting simulation.', {service: this.constructor.name, id: this.getId()});
 
@@ -185,6 +185,12 @@ export class RouteSimulator extends AbstractSimulator {
         return this.options.speedMps * (this.options.updateIntervalMs / 1000);
     }
 
+    /** Course of the route segment starting at route[index], or null if there is none. */
+    private segmentCourse(index: number): number | null {
+        const route = this.getRoute();
+        return index < route.length - 1 ? bearingBetween(route[index], route[index + 1]) : null;
+    }
+
     private describe(phase: string, phaseEndsAt: number | null): void {
         this.setDetails({
             phase,
@@ -213,7 +219,9 @@ export class RouteSimulator extends AbstractSimulator {
             const left = haversineDistance(from, to) - this.distanceIntoSegment;
             if (budget < left) {
                 this.distanceIntoSegment += budget;
-                this.setPosition(offsetPosition(from, this.distanceIntoSegment, bearingBetween(from, to)));
+                const position = offsetPosition(from, this.distanceIntoSegment, bearingBetween(from, to));
+                // The course of a great circle changes along it, so take it at the new position.
+                this.setPosition(position, {speed: this.options.speedMps, course: bearingBetween(position, to)});
                 return;
             }
             budget -= left;
@@ -221,15 +229,15 @@ export class RouteSimulator extends AbstractSimulator {
             this.distanceIntoSegment = 0;
         }
 
-        // Reached the end of the route.
-        this.setPosition(route[route.length - 1]);
+        // Reached the end of the route: standing still, facing along the last segment.
+        this.setPosition(route[route.length - 1], {speed: 0, course: this.segmentCourse(route.length - 2)});
         if (this.options.loop) {
             ApplicationLogger.info('Looping route simulation back to start.', {
                 service: this.constructor.name,
                 id: this.getId(),
             });
             this.currentIndex = 0;
-            this.setPosition(route[0]);
+            this.setPosition(route[0], {speed: this.options.speedMps, course: this.segmentCourse(0)});
             return;
         }
         ApplicationLogger.info('Route simulation finished.', {service: this.constructor.name, id: this.getId()});

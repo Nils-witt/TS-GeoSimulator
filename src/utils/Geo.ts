@@ -4,7 +4,7 @@
  * Spherical geometry helpers on WGS84 lat/lon positions (degrees, meters).
  */
 
-import {LatLonPosition} from '../Types';
+import {LatLonPosition, SimulatedPosition} from '../Types';
 
 const EARTH_RADIUS_METERS = 6371000;
 
@@ -57,6 +57,15 @@ export function offsetPosition(from: LatLonPosition, distanceMeters: number, bea
     const lon2 = ((lon1 + Math.atan2(y, x) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
 
     return {latitude: toDeg(lat2), longitude: toDeg(lon2)};
+}
+
+/** Speed and course carried by a simulator position; null for positions without them. */
+export function motionOf(position: LatLonPosition | null): {speed: number | null; course: number | null} {
+    if (position && 'speed' in position) {
+        const {speed, course} = position as SimulatedPosition;
+        return {speed, course};
+    }
+    return {speed: null, course: null};
 }
 
 /** A uniformly random position in the box spanned by two corners; a missing corner falls back to DEFAULT_POSITION. */

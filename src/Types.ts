@@ -7,6 +7,16 @@ export interface LatLonPosition {
     longitude: number;
 }
 
+/** How a simulated vehicle is moving at its current position. */
+export interface Motion {
+    // Meters per second.
+    speed: number;
+    // Direction of travel in degrees [0, 360), clockwise from north; null if unknown.
+    course: number | null;
+}
+
+export type SimulatedPosition = LatLonPosition & Motion;
+
 export interface TimedLatLonPosition extends LatLonPosition {
     timestamp: number;
 }

@@ -12,6 +12,7 @@ import {AbstractConnector} from './AbstractConnector';
 import {AbstractEntity} from '../entities/AbstractEntity';
 import {Vehicle} from '../entities/Vehicle';
 import {LatLonPosition, SimulatorDetails} from '../Types';
+import {motionOf} from '../utils/Geo';
 import {PositionRecord, RouteRecord, SqliteConnector, StatusRecord} from './SqliteConnector';
 import {DetailsEvent, PositionUpdateEvent, StatusEvent, RouteEvent} from '../events/Events';
 
@@ -19,12 +20,19 @@ const MAX_POSITIONS = 5000;
 const MAX_STATUSES = 500;
 const MAX_ROUTES = 50;
 
+// Speed in meters per second and course in degrees from north; null if the entity reports none.
+export type LivePosition = LatLonPosition & {speed: number | null; course: number | null};
+
+function toLivePosition(position: LatLonPosition | null): LivePosition | null {
+    return position && {latitude: position.latitude, longitude: position.longitude, ...motionOf(position)};
+}
+
 export interface VehicleSummary {
     id: string;
     name: string;
     simulator: string | null;
     status: number | null;
-    position: LatLonPosition | null;
+    position: LivePosition | null;
     route: LatLonPosition[];
     details: SimulatorDetails | null;
     updatedAt: number;
@@ -115,7 +123,7 @@ export class LiveStateConnector extends AbstractConnector {
             name: entity.getName(),
             simulator: null,
             status: null,
-            position: entity.getPosition(),
+            position: toLivePosition(entity.getPosition()),
             route: [],
             details: null,
             updatedAt: Date.now(),
@@ -140,12 +148,13 @@ export class LiveStateConnector extends AbstractConnector {
         }
         const position = event.getPosition();
         const timestamp = position && 'timestamp' in position ? position.timestamp : Date.now();
-        state.position = position ? {latitude: position.latitude, longitude: position.longitude} : null;
+        state.position = toLivePosition(position);
         state.updatedAt = timestamp;
         this.publish('position', {
             id: state.id,
             latitude: position?.latitude ?? null,
             longitude: position?.longitude ?? null,
+            ...motionOf(position),
             timestamp,
         });
     }
