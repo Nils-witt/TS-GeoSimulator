@@ -2,13 +2,14 @@ import {AbstractSimulator} from './AbstractSimulator';
 import {LatLonPosition} from '../Types';
 import {ApplicationLogger} from '../utils/Logger';
 import {getFormattedDate} from '../utils/Helpers';
-import {bearingBetween, haversineDistance, offsetPosition} from '../utils/Geo';
+import {bearingBetween, offsetPosition} from '../utils/Geo';
 import {RouteFinishedEvent} from '../events/Events';
+import {dynamicsFor, Progress, SpeedProfile} from './SpeedProfile';
 
 export interface RouteSimulatorOptions {
     serverUrl?: string; // e.g. https://router.project-osrm.org/route/v1
     profile?: string; // e.g. driving, walking, cycling
-    speedMps?: number; // meters per second
+    speedMps?: number; // maximum speed in meters per second; the actual speed follows the road and corners
     updateIntervalMs?: number;
     maxRetries?: number;
     fetchTimeoutMs?: number;
@@ -24,6 +25,11 @@ export interface OSRMResponse {
         };
         duration: number;
         distance: number;
+        legs?: {
+            annotation?: {
+                speed?: number[];
+            };
+        }[];
     }[];
     waypoints: {
         location: number[];
@@ -36,8 +42,8 @@ export class RouteSimulator extends AbstractSimulator {
     private endPos: LatLonPosition;
     private options: Required<RouteSimulatorOptions>;
     private timer: NodeJS.Timeout | null = null;
-    private currentIndex = 0;
-    private distanceIntoSegment = 0; // meters travelled from route[currentIndex] towards the next point
+    private progress: Progress = {index: 0, offset: 0, speed: 0};
+    private profile: SpeedProfile | null = null;
 
     constructor(options: RouteSimulatorOptions) {
         super();
@@ -90,8 +96,7 @@ export class RouteSimulator extends AbstractSimulator {
             // The route could not be fetched; setup() already logged it.
             return;
         }
-        this.currentIndex = 0;
-        this.distanceIntoSegment = 0;
+        this.progress = {index: 0, offset: 0, speed: 0};
         this.setPosition(this.getRoute()[0], {speed: 0, course: this.segmentCourse(0)});
 
         ApplicationLogger.info('Starting simulation.', {service: this.constructor.name, id: this.getId()});
@@ -108,7 +113,7 @@ export class RouteSimulator extends AbstractSimulator {
     }
 
     private async fetchRoute(): Promise<void> {
-        const url = `${this.options.serverUrl}/${this.options.profile}/${this.startPos.longitude},${this.startPos.latitude};${this.endPos.longitude},${this.endPos.latitude}?overview=full&geometries=geojson`;
+        const url = `${this.options.serverUrl}/${this.options.profile}/${this.startPos.longitude},${this.startPos.latitude};${this.endPos.longitude},${this.endPos.latitude}?overview=full&geometries=geojson&annotations=speed`;
 
         let attempt = 0;
         while (attempt <= this.options.maxRetries) {
@@ -156,7 +161,14 @@ export class RouteSimulator extends AbstractSimulator {
                     {service: this.constructor.name, id: this.getId()},
                 );
                 const coords: number[][] = json.routes[0].geometry.coordinates;
-                this.setRoute(coords.map((c: number[]) => ({latitude: c[1], longitude: c[0]})));
+                const route = coords.map((c: number[]) => ({latitude: c[1], longitude: c[0]}));
+                this.profile = new SpeedProfile(
+                    route,
+                    this.options.speedMps,
+                    dynamicsFor(this.options.profile),
+                    this.roadSpeeds(json, route.length),
+                );
+                this.setRoute(route);
                 return;
             } catch {
                 ApplicationLogger.error('Failed to fetch route:', {service: this.constructor.name, id: this.getId()});
@@ -167,22 +179,23 @@ export class RouteSimulator extends AbstractSimulator {
             }
         }
 
+        this.profile = null;
         this.setRoute([]);
+    }
+
+    /** Road speed per route segment, if the router reported one for every segment. */
+    private roadSpeeds(json: OSRMResponse, points: number): number[] {
+        const legs = json.routes[0].legs ?? [];
+        const speeds = legs.flatMap((leg) => leg.annotation?.speed ?? []);
+        return speeds.length === points - 1 ? speeds : [];
     }
 
     /** Simulated driving time for the remaining route. */
     estimateRemainingMs(): number {
-        const route = this.getRoute();
-        let distance = -this.distanceIntoSegment;
-        for (let i = this.currentIndex; i < route.length - 1; i++) {
-            distance += haversineDistance(route[i], route[i + 1]);
+        if (!this.profile) {
+            return 0;
         }
-        const ticks = Math.ceil(Math.max(0, distance) / this.stepMeters());
-        return ticks * this.options.updateIntervalMs;
-    }
-
-    private stepMeters(): number {
-        return this.options.speedMps * (this.options.updateIntervalMs / 1000);
+        return this.profile.remainingSeconds(this.progress, this.options.updateIntervalMs / 1000) * 1000;
     }
 
     /** Course of the route segment starting at route[index], or null if there is none. */
@@ -197,36 +210,32 @@ export class RouteSimulator extends AbstractSimulator {
             phaseStartedAt: Date.now(),
             phaseEndsAt,
             places: {Destination: this.endPos},
-            stats: {Speed: `${Math.round(this.options.speedMps * 3.6)} km/h`},
+            stats: {'Max speed': `${Math.round(this.options.speedMps * 3.6)} km/h`},
             paused: false,
             remainingMs: null,
             controls: [],
         });
     }
 
-    /** Moves `speed × interval` meters along the route, passing as many route points as needed. */
+    /** Drives one update interval along the route, with the speed following the road, corners and braking. */
     private tick(): void {
         const route = this.getRoute();
-        if (this.currentIndex >= route.length - 1) {
+        const profile = this.profile;
+        if (!profile || profile.isFinished(this.progress)) {
             this.stop();
             return;
         }
 
-        let budget = this.stepMeters();
-        while (this.currentIndex < route.length - 1) {
-            const from = route[this.currentIndex];
-            const to = route[this.currentIndex + 1];
-            const left = haversineDistance(from, to) - this.distanceIntoSegment;
-            if (budget < left) {
-                this.distanceIntoSegment += budget;
-                const position = offsetPosition(from, this.distanceIntoSegment, bearingBetween(from, to));
-                // The course of a great circle changes along it, so take it at the new position.
-                this.setPosition(position, {speed: this.options.speedMps, course: bearingBetween(position, to)});
-                return;
-            }
-            budget -= left;
-            this.currentIndex++;
-            this.distanceIntoSegment = 0;
+        this.progress = profile.advance(this.progress, this.options.updateIntervalMs / 1000);
+        if (!profile.isFinished(this.progress)) {
+            const {index, offset, speed} = this.progress;
+            const from = route[index];
+            const to = route[index + 1];
+            const position = offsetPosition(from, offset, bearingBetween(from, to));
+            // The course of a great circle changes along it, so take it at the new position.
+            const course = offset > 0 ? bearingBetween(position, to) : this.segmentCourse(index);
+            this.setPosition(position, {speed, course});
+            return;
         }
 
         // Reached the end of the route: standing still, facing along the last segment.
@@ -236,8 +245,8 @@ export class RouteSimulator extends AbstractSimulator {
                 service: this.constructor.name,
                 id: this.getId(),
             });
-            this.currentIndex = 0;
-            this.setPosition(route[0], {speed: this.options.speedMps, course: this.segmentCourse(0)});
+            this.progress = {index: 0, offset: 0, speed: 0};
+            this.setPosition(route[0], {speed: 0, course: this.segmentCourse(0)});
             return;
         }
         ApplicationLogger.info('Route simulation finished.', {service: this.constructor.name, id: this.getId()});

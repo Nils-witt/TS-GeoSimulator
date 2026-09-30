@@ -1255,7 +1255,7 @@
             };
             const numValue = (n) => (Number.isFinite(n) ? n : '');
             const speedLabel = (speed) =>
-                `Speed (m/s)${Number.isFinite(speed) ? ` · ${Math.round(speed * 3.6)} km/h` : ''}`;
+                `Max speed (m/s)${Number.isFinite(speed) ? ` · ${Math.round(speed * 3.6)} km/h` : ''}`;
 
             function renderCardFooter(kind, item) {
                 const i = draft[kind].indexOf(item);

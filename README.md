@@ -36,7 +36,9 @@ The application is an Express server (`src/index.ts`) that runs the simulations 
 - `src/config/` stores the config in SQLite (`ConfigStore.ts`) and validates API input (`validation.ts`).
 - `src/simulator/` contains the simulators. `RouteSimulator` drives one OSRM route; `RandomRouteSimulator` and
   `EmergencyDispatchSimulator` build on `MultiRouteSimulator`, which chains routes. `createSimulator.ts` maps a
-  vehicle config to its simulator.
+  vehicle config to its simulator. A vehicle's configured speed is its maximum: `SpeedProfile.ts` makes it
+  accelerate from standstill, follow the road speeds reported by OSRM, slow down for corners and brake in time for
+  slower sections and the destination.
 - `src/connectors/` forwards vehicle updates to external systems; `createConnector.ts` maps a connector config to
   its connector. `LiveStateConnector.ts` is attached to every vehicle. It keeps the live state, stores the history
   in SQLite and publishes updates to the WebSocket (`src/server/websocket.ts`).
