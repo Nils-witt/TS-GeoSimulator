@@ -14,7 +14,7 @@
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.3",
-    "@types/ws": "^8.18.1",
+    "@types/ws": "^8.18.2",
     "nodemon": "^3.1.14",
     "oxlint": "^1.86.0",
     "prettier": "3.9.9",
